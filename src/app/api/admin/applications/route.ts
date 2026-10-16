@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { sendSellerApplicationEmail } from "@/lib/email";
+import { sendSellerNotificationEmail } from "@/lib/email";
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
