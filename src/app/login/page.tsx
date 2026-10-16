@@ -1,5 +1,6 @@
 // src/app/login/page.tsx
 "use client";
+import { Suspense } from "react";
 export const dynamic = 'force-dynamic'; // 👈 ADD THIS LINE
 import { useState, useEffect } from "react";
 import { signIn, useSession } from "next-auth/react";

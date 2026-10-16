@@ -26,12 +26,15 @@ interface CartState {
   toggleSelect: (id: string) => Promise<void>;
   toggleSelectAll: () => void;
   clearCart: () => void;
+  clearGuestCart: () => void;
   syncFromDB: (items: CartItem[]) => void;
+  
   
   selectedItems: () => CartItem[];
   selectedTotalAmount: () => number;
   selectedTotalItems: () => number;
   totalItems: () => number;
+  
 }
 
 export const useCartStore = create<CartState>()(
@@ -211,6 +214,13 @@ export const useCartStore = create<CartState>()(
 
       clearCart: () => set({ items: [] }),
       syncFromDB: (items) => set({ items }),
+      clearGuestCart: () => {
+    set({ items: [] });
+    // Also clear it from localStorage so it doesn't come back on refresh
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("ibuy-cart"); // 👈 Change "ibuy-cart" to whatever your localStorage key is
+    }
+  },
     }),
     {
       name: "ibuy-cart-storage",
