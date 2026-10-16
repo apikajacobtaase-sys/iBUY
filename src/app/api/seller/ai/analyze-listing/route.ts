@@ -4,8 +4,8 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+ const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || "sk-dummy-key-for-build",
 });
 
 export async function POST(req: Request) {
