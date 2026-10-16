@@ -1,6 +1,6 @@
 // src/app/login/page.tsx
 "use client";
-
+export const dynamic = 'force-dynamic'; // 👈 ADD THIS LINE
 import { useState, useEffect } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
