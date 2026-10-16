@@ -141,7 +141,7 @@ export async function POST(req: Request) {
       });
 
       // ✅ Send APPROVAL email notification
-      await sendSellerApplicationEmail({
+      await sendSellerNotificationEmail({
         to: application.user.email,
         businessName: application.businessName,
         status: "APPROVED",

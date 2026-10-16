@@ -26,27 +26,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }, [status, isAdmin, router]);
 
-  const sidebarItems = useMemo<SidebarItem[]>(() => {
+   const sidebarItems = useMemo<SidebarItem[]>(() => {
     const allItems: SidebarItem[] = [
-      { label: "Overview", href: "/admin", icon: LayoutDashboard },
-      { label: "Sellers", href: "/admin/sellers", icon: Store },
-      { label: "Customers", href: "/admin/customers", icon: Users },
-      { label: "Products", href: "/admin/products", icon: Package },
-      { label: "Categories", href: "/admin/categories", icon: FolderTree },
-      { label: "Orders", href: "/admin/orders", icon: ShoppingCart },
-      { label: "Payments", href: "/admin/payments", icon: CreditCard },
-      { label: "Payouts", href: "/admin/payouts", icon: Wallet },
-      { label: "Disputes", href: "/admin/disputes", icon: AlertTriangle },
-      { label: "Promotions", href: "/admin/promotions", icon: Tag },
-      { label: "Reviews", href: "/admin/reviews", icon: Star },
-      { label: "Support", href: "/admin/support", icon: LifeBuoy },
-      { label: "Analytics", href: "/admin/analytics", icon: BarChart3 },
-      { label: "Staff", href: "/admin/staff", icon: UserCog },
-      { label: "Audit Logs", href: "/admin/audit-logs", icon: ScrollText },
-      { label: "Settings", href: "/admin/settings", icon: Settings },
-      { label: "Communications", href: "/admin/communications", icon: Mail },
-      { label: "Locations", href: "/admin/locations", icon: Globe },
-      { label: "Delivery & Logistics", href: "/admin/delivery", icon: Truck },
+      { label: "Overview", href: "/admin", iconName: "LayoutDashboard" },
+      { label: "Sellers", href: "/admin/sellers", iconName: "Store" },
+      { label: "Customers", href: "/admin/customers", iconName: "Users" },
+      { label: "Products", href: "/admin/products", iconName: "Package" },
+      { label: "Categories", href: "/admin/categories", iconName: "FolderTree" },
+      { label: "Orders", href: "/admin/orders", iconName: "ShoppingCart" },
+      { label: "Payments", href: "/admin/payments", iconName: "CreditCard" },
+      { label: "Payouts", href: "/admin/payouts", iconName: "Wallet" },
+      { label: "Disputes", href: "/admin/disputes", iconName: "AlertTriangle" },
+      { label: "Promotions", href: "/admin/promotions", iconName: "Tag" },
+      { label: "Reviews", href: "/admin/reviews", iconName: "Star" },
+      { label: "Support", href: "/admin/support", iconName: "LifeBuoy" },
+      { label: "Analytics", href: "/admin/analytics", iconName: "BarChart3" },
+      { label: "Staff", href: "/admin/staff", iconName: "UserCog" },
+      { label: "Audit Logs", href: "/admin/audit-logs", iconName: "ScrollText" },
+      { label: "Settings", href: "/admin/settings", iconName: "Settings" },
+      { label: "Communications", href: "/admin/communications", iconName: "Mail" },
+      { label: "Locations", href: "/admin/locations", iconName: "Globe" },
+      { label: "Delivery & Logistics", href: "/admin/delivery", iconName: "Truck" },
     ];
 
     return allItems.filter((item) => {

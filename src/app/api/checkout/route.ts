@@ -146,16 +146,16 @@ export async function POST(req: Request) {
               currency: "GHS",
             },
           },
-          items: {
+           items: {
             create: cartItems.map((item) => {
               const isOffer = !!item.offer;
               return {
-                variantId: item.variantId,
+                variant: { connect: { id: item.variantId } }, // 👈 Use connect
                 title: isOffer ? item.offer!.variant.product.title : item.variant.product.title,
                 price: isOffer ? parseFloat(item.offer!.price.toString()) : parseFloat(item.variant.price.toString()),
                 quantity: item.quantity,
-                sellerId: isOffer ? item.offer!.seller.id : (item.variant.product.sellerId || null),
-                offerId: isOffer ? item.offer!.id : null,
+                seller: item.variant.product.sellerId ? { connect: { id: item.variant.product.sellerId } } : undefined,
+                offer: isOffer ? { connect: { id: item.offer!.id } } : undefined,
                 status: "PENDING",
               };
             }),
@@ -233,7 +233,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("🚨 Checkout error:", error);
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors?.[0]?.message || "Invalid form data" }, { status: 400 });
+      return NextResponse.json({ error: error.issues?.[0]?.message  || "Invalid form data" }, { status: 400 });
     }
     if (error.message?.includes("Insufficient stock")) {
       return NextResponse.json({ error: error.message }, { status: 409 });
