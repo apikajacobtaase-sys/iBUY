@@ -1,14 +1,14 @@
-// src/app/login/page.tsx
+ // src/app/login/page.tsx
 "use client";
-import { Suspense } from "react";
-export const dynamic = 'force-dynamic'; // 👈 ADD THIS LINE
-import { useState, useEffect } from "react";
+
+import { useState, useEffect, Suspense } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useCartStore } from "@/store/cartStore";
 
-export default function LoginPage() {
+// 1. Extract all logic using useSearchParams into this separate component
+function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { status } = useSession();
@@ -62,17 +62,20 @@ export default function LoginPage() {
             });
 
             if (mergeRes.ok) {
-              // Clear the guest cart from localStorage after successful merge
-              useCartStore.getState().clearGuestCart();
+              // Safely clear the guest cart (with fallback if clearGuestCart isn't in store yet)
+              const store = useCartStore.getState();
+              if (typeof store.clearGuestCart === "function") {
+                store.clearGuestCart();
+              } else {
+                localStorage.removeItem("cart-storage");
+              }
             }
           }
         }
       } catch (error) {
         console.error("Cart merge failed:", error);
-        // Don't block login if merge fails
       }
 
-      // Redirect to the intended page (e.g., /checkout) or default to /account
       const callbackUrl = searchParams.get("callbackUrl") || "/account";
       router.push(callbackUrl);
     }
@@ -156,10 +159,23 @@ export default function LoginPage() {
             Create one
           </Link>
         </p>
-        <Link href="/forgot-password" className="text-sm text-green-600 hover:text-green-700 font-medium">
-  Forgot Password?
-</Link>
+        <Link href="/forgot-password" className="text-sm text-green-600 hover:text-green-700 font-medium block text-center mt-2">
+          Forgot Password?
+        </Link>
       </div>
     </div>
+  );
+}
+
+// 2. Wrap the component in <Suspense> in the default export
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    }>
+      <LoginFormContent />
+    </Suspense>
   );
 }
