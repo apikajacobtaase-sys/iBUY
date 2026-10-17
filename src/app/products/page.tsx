@@ -25,12 +25,23 @@ export default async function ProductsPage({
   if (query) queryParams.set("q", query);
   queryParams.set("page", pageNum.toString());
   queryParams.set("limit", limit.toString());
+   // ... inside your ProductsPage component
 
-  // 👇 3. USE THE ABSOLUTE URL
   const res = await fetch(`${baseUrl}/api/search?${queryParams.toString()}`, { 
     cache: "no-store" 
   });
-  
+
+  // ✅ ADD THIS CHECK: If the API returns HTML (404/500), don't try to parse it as JSON
+  if (!res.ok) {
+    console.error("API Error:", res.status, res.statusText);
+    // Fallback to empty data so the page doesn't crash completely
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-red-600">Failed to load products. Please try again later.</p>
+      </div>
+    );
+  }
+
   const data = await res.json();
   const products = data.products || [];
   const total = data.total || 0;
