@@ -2,49 +2,32 @@
 import ProductCard from "@/components/ProductCard";
 import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, Package } from "lucide-react";
 import Link from "next/link";
-import { headers } from "next/headers"; // 👈 1. ADD THIS IMPORT
+// src/app/products/page.tsx
+import { headers } from "next/headers"; // Make sure this is imported
 
-export default async function ProductsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ search?: string; page?: string }>;
-}) {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ search?: string; page?: string }> }) {
   const { search: query = "", page = "1" } = await searchParams;
-  const pageNum = parseInt(page, 10) || 1;
-  const limit = 20;
-
-  // 👇 2. BULLETPROOF ABSOLUTE URL CONSTRUCTION
+  
+  // ✅ THE ONLY WAY TO GET AN ABSOLUTE URL IN A SERVER COMPONENT
   const headersList = await headers();
   const host = headersList.get("host");
   const protocol = process.env.NODE_ENV === "development" ? "http" : "https";
-  
-  // Uses env variable if set, otherwise dynamically builds it (works locally AND in production)
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
+  const baseUrl = `${protocol}://${host}`; 
 
-  const queryParams = new URLSearchParams();
-  if (query) queryParams.set("q", query);
-  queryParams.set("page", pageNum.toString());
-  queryParams.set("limit", limit.toString());
-   // ... inside your ProductsPage component
-
-  const res = await fetch(`${baseUrl}/api/search?${queryParams.toString()}`, { 
+  const res = await fetch(`${baseUrl}/api/search?q=${query}&page=${page}&limit=20`, { 
     cache: "no-store" 
   });
 
-  // ✅ ADD THIS CHECK: If the API returns HTML (404/500), don't try to parse it as JSON
+  // ✅ ADD THIS SAFETY CHECK
   if (!res.ok) {
-    console.error("API Error:", res.status, res.statusText);
-    // Fallback to empty data so the page doesn't crash completely
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-red-600">Failed to load products. Please try again later.</p>
-      </div>
-    );
+    throw new Error(`Failed to fetch products: ${res.status} ${res.statusText}`);
   }
 
   const data = await res.json();
+  // ... rest of your code
+}
   const products = data.products || [];
-  const total = data.total || 0;
+
   const totalPages = Math.ceil(total / limit);
 
   // ... (keep the rest of your return JSX exactly as it is)
