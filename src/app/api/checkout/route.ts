@@ -209,7 +209,8 @@ export async function POST(req: Request) {
         email: session.user.email,
         amount: Math.round(parseFloat(finalTotal.toString()) * 100),
         reference: `ORDER-${order.id}-${Date.now()}`,
-        callback_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/success`,
+       // ✅ NUCLEAR FIX: Hardcode the live Vercel URL to guarantee no localhost fallback
+callback_url: `https://ibuy-apikajacobtaase-sys.vercel.app/payment/success`,
         metadata: { order_id: order.id },
       }),
     });

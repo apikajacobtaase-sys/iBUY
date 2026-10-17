@@ -1,7 +1,8 @@
- // src/app/products/page.tsx
+// src/app/products/page.tsx
 import ProductCard from "@/components/ProductCard";
 import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, Package } from "lucide-react";
 import Link from "next/link";
+import { headers } from "next/headers"; // 👈 1. ADD THIS IMPORT
 
 export default async function ProductsPage({
   searchParams,
@@ -12,14 +13,21 @@ export default async function ProductsPage({
   const pageNum = parseInt(page, 10) || 1;
   const limit = 20;
 
-  // ✅ BULLETPROOF FIX: Use a relative URL. Next.js automatically resolves this 
-  // to the correct host (localhost in dev, vercel.app in production).
+  // 👇 2. BULLETPROOF ABSOLUTE URL CONSTRUCTION
+  const headersList = await headers();
+  const host = headersList.get("host");
+  const protocol = process.env.NODE_ENV === "development" ? "http" : "https";
+  
+  // Uses env variable if set, otherwise dynamically builds it (works locally AND in production)
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
+
   const queryParams = new URLSearchParams();
   if (query) queryParams.set("q", query);
   queryParams.set("page", pageNum.toString());
   queryParams.set("limit", limit.toString());
 
-  const res = await fetch(`/api/search?${queryParams.toString()}`, { 
+  // 👇 3. USE THE ABSOLUTE URL
+  const res = await fetch(`${baseUrl}/api/search?${queryParams.toString()}`, { 
     cache: "no-store" 
   });
   
@@ -28,6 +36,7 @@ export default async function ProductsPage({
   const total = data.total || 0;
   const totalPages = Math.ceil(total / limit);
 
+  // ... (keep the rest of your return JSX exactly as it is)
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
       {/* Breadcrumbs */}

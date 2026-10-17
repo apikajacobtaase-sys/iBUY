@@ -16,7 +16,9 @@ export function getOrderConfirmationEmail(params: {
 }): string {
   const { customerName, orderId, items, totalAmount, shippingAddress } = params;
   const shortOrderId = orderId.slice(-8).toUpperCase();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+ // ✅ NUCLEAR FIX: Hardcode the live Vercel URL to guarantee no localhost fallback
+
+callback_url: `https://ibuy-apikajacobtaase-sys.vercel.app/payment/success`,
 
   const itemsHtml = items.map(item => `
     <tr>
