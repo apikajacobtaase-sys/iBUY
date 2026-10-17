@@ -1,5 +1,4 @@
-// src/app/products/page.tsx
-import { db } from "@/lib/db"; // Note: You might not even need this import if you are using the API
+ // src/app/products/page.tsx
 import ProductCard from "@/components/ProductCard";
 import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, Package } from "lucide-react";
 import Link from "next/link";
@@ -13,15 +12,18 @@ export default async function ProductsPage({
   const pageNum = parseInt(page, 10) || 1;
   const limit = 20;
 
-  // Fetch from our intelligent search API
-  const apiUrl = new URL("/api/search", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
-  if (query) apiUrl.searchParams.set("q", query);
-  apiUrl.searchParams.set("page", pageNum.toString());
-  apiUrl.searchParams.set("limit", limit.toString());
+  // ✅ BULLETPROOF FIX: Use a relative URL. Next.js automatically resolves this 
+  // to the correct host (localhost in dev, vercel.app in production).
+  const queryParams = new URLSearchParams();
+  if (query) queryParams.set("q", query);
+  queryParams.set("page", pageNum.toString());
+  queryParams.set("limit", limit.toString());
 
-  const res = await fetch(apiUrl.toString(), { cache: "no-store" });
-  const data = await res.json();
+  const res = await fetch(`/api/search?${queryParams.toString()}`, { 
+    cache: "no-store" 
+  });
   
+  const data = await res.json();
   const products = data.products || [];
   const total = data.total || 0;
   const totalPages = Math.ceil(total / limit);
