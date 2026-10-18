@@ -437,7 +437,8 @@ model OrderItem {
   
   // Multi-seller attribution
   offerId         String?        @map("offer_id")
-  sellerId        String         @map("seller_id")
+  sellerId        String?        @map("seller_id")
+  offer       SellerOffer? @relation(fields: [offerId], references: [id])
   
   // Fulfillment
   status          String         @default("PENDING") @map("status") // PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED
@@ -445,6 +446,7 @@ model OrderItem {
   trackingCarrier String?        @map("tracking_carrier")
   shippedAt       DateTime?      @map("shipped_at")
   deliveredAt     DateTime?      @map("delivered_at")
+
   
   returns         Return[] 
 
@@ -1046,7 +1048,7 @@ model SellerOffer {
 
   // Relations for checkout/cart
   cartItems       CartItem[]
-  // orderItems   OrderItem[] // To be added during checkout phase
+ orderItems   OrderItem[] // To be added during checkout phase
 
   @@unique([sellerId, variantId]) // CRITICAL: Prevents a seller from creating duplicate offers for the same variant
   @@index([sellerId])
