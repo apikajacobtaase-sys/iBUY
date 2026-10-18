@@ -50,42 +50,46 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    // 2. Map the data to find the absolute best offer across all variants
+   // Inside src/app/api/search/route.ts
+
     const formattedProducts = products.map((product) => {
       let bestOffer: any = null;
       let bestVariantId: string | null = null;
 
-      // Loop through variants to find the cheapest offer with stock
-      for (const variant of product.variants) {
-        if (variant.sellerOffers && variant.sellerOffers.length > 0) {
-          const offer = variant.sellerOffers[0]; // Already sorted by price asc
-          if (!bestOffer || parseFloat(offer.price.toString()) < parseFloat(bestOffer.price.toString())) {
-            bestOffer = offer;
-            bestVariantId = variant.id;
+      // ✅ SAFETY: Check if variants exist first
+      if (product.variants && product.variants.length > 0) {
+        for (const variant of product.variants) {
+          // ✅ SAFETY: Check if sellerOffers exist
+          if (variant.sellerOffers && variant.sellerOffers.length > 0) {
+            const offer = variant.sellerOffers[0];
+            if (!bestOffer || parseFloat(offer.price.toString()) < parseFloat(bestOffer.price.toString())) {
+              bestOffer = offer;
+              bestVariantId = variant.id;
+            }
           }
         }
       }
 
       return {
         id: product.id,
-        title: product.title,
-        slug: product.slug,
+        title: product.title || "Untitled Product",
+        slug: product.slug || "",
         
-        // ✅ Use Offer data exclusively
         price: bestOffer ? parseFloat(bestOffer.price.toString()) : 0,
         stockQuantity: bestOffer ? bestOffer.stockQuantity : 0,
         
-        // ✅ CRITICAL: Pass IDs to frontend
         bestOfferId: bestOffer?.id || null,
-        bestVariantId: bestVariantId, // Keep for schema relations, but logic uses offerId
+        bestVariantId: bestVariantId,
         
-        imageUrl: product.images[0]?.url || null,
-        sellerName: bestOffer ? bestOffer.seller.businessName : (product.seller?.businessName || "iBUY Marketplace"),
-        sellerId: bestOffer ? bestOffer.seller.id : product.sellerId,
+        // ✅ SAFETY: Ensure image URL is a string or null
+        imageUrl: (product.images && product.images.length > 0) ? product.images[0].url : null,
+        
+        // ✅ SAFETY: Use optional chaining for seller names
+        sellerName: bestOffer?.seller?.businessName || product.seller?.businessName || "iBUY Marketplace",
+        sellerId: bestOffer?.seller?.id || product.sellerId || "unknown",
         inStock: !!bestOffer,
       };
     });
-
     return NextResponse.json({ 
       products: formattedProducts, 
       total,
