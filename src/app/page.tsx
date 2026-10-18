@@ -253,18 +253,19 @@ export default function HomePage() {
                               startY: rect.y,
                               id: Date.now().toString(),
                             });
-                            addItem({
-                              productId: product.id,
-                              variantId: product.bestVariantId || product.id,
-                              offerId: product.bestOfferId, // ✅ PRIMARY KEY FOR STOCK
-                              title: product.title,
-                              price: product.price,
-                              imageUrl: product.imageUrl,
-                              stockQuantity: product.stockQuantity,
-                              sellerId: product.sellerId || "unknown",
-                              sellerName: product.sellerName || "iBUY Marketplace",
-                              quantity: 1,
-                            });
+                            // In src/app/page.tsx inside the onClick handler
+addItem({
+  productId: product.id,
+  variantId: product.bestVariantId || product.id, // Keep for schema, but ignore for logic
+  offerId: product.bestOfferId, // ✅ THIS MUST BE PRESENT
+  title: product.title,
+  price: product.price,
+  imageUrl: product.imageUrl,
+  stockQuantity: product.stockQuantity,
+  sellerId: product.sellerId,
+  sellerName: product.sellerName,
+  quantity: 1,
+});
                           }
                         }}
                         disabled={!product.inStock}

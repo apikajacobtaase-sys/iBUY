@@ -5,12 +5,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { z } from "zod";
 
-// ✅ FIX 1: Add discount fields to the schema
 const checkoutSchema = z.object({
   cartItemIds: z.array(z.string()).min(1, "At least one item is required"),
   localityId: z.string().min(1, "Locality ID is required"),
-  discountId: z.string().optional(), // ✅ Added
-  discountAmount: z.number().optional(), // ✅ Added
+  discountId: z.string().optional(),
+  discountAmount: z.number().optional(),
   address: z.object({
     recipientName: z.string().min(1, "Recipient name is required"),
     phone: z.string().min(1, "Phone number is required"),
@@ -31,7 +30,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const validated = checkoutSchema.parse(body);
 
-    // 1. Fetch cart items securely
+    // 1. Fetch cart items (Must include Offer)
     const cartItems = await db.cartItem.findMany({
       where: {
         id: { in: validated.cartItemIds },
@@ -44,16 +43,14 @@ export async function POST(req: Request) {
             seller: { select: { id: true } },
           },
         },
-        variant: {
-          include: {
-            product: { select: { title: true, sellerId: true } },
-          },
-        },
       },
     });
 
-    if (cartItems.length === 0) {
-      return NextResponse.json({ error: "No valid items to checkout." }, { status: 400 });
+    // ✅ FILTER: Only keep items that have a valid Offer
+    const validItems = cartItems.filter(item => item.offer);
+
+    if (validItems.length === 0) {
+      return NextResponse.json({ error: "No valid offers found in cart." }, { status: 400 });
     }
 
     // 2. Validate Delivery Zone
@@ -74,53 +71,24 @@ export async function POST(req: Request) {
 
     const zone = zoneLocality.deliveryZone;
     const deliveryFee = parseFloat(zone.baseDeliveryFee.toString());
-    
-    // 3. Calculate Server-Side Subtotal
+
+    // 3. Calculate Server-Side Subtotal (OFFER ONLY)
     let serverSubtotal = 0;
-          // A. Concurrency Safety: Re-validate stock
-      for (const item of cartItems) {
-        let currentStock = 0;
-        let itemName = "Unknown Item";
+    for (const item of validItems) {
+      serverSubtotal += parseFloat(item.offer!.price.toString()) * item.quantity;
+    }
 
-        // ✅ FIX: Check Seller Offer Stock FIRST
-        if (item.offerId && item.offer) {
-          currentStock = item.offer.stockQuantity;
-          itemName = item.offer.variant.product.title;
-          
-          if (item.offer.status !== "ACTIVE") {
-             throw new Error(`The offer for "${itemName}" is no longer active.`);
-          }
-        } 
-        // ✅ Then check Variant Stock only if no Offer exists
-        else if (item.variant) {
-          currentStock = item.variant.stockQuantity;
-          itemName = item.variant.product.title;
-        }
-
-        console.log(`🔍 Checking Stock for ${itemName}: OfferID=${item.offerId}, Stock=${currentStock}`);
-
-        if (currentStock < item.quantity) {
-          throw new Error(`Insufficient stock for "${itemName}". Only ${currentStock} left.`);
-        }
-      }
-
-    // Apply Discount to Total
+    // Apply Discount
     const discountAmount = validated.discountAmount || 0;
     const finalTotal = Math.max(0, serverSubtotal + deliveryFee - discountAmount);
 
     // 4. Atomic Transaction
     const order = await db.$transaction(async (tx) => {
       
-      // A. Concurrency Safety: Re-validate stock
-      for (const item of cartItems) {
-        const currentStock = item.offer ? item.offer.stockQuantity : item.variant.stockQuantity;
-        const itemName = item.offer ? item.offer.variant.product.title : item.variant.product.title;
-
-        if (currentStock < item.quantity) {
-          throw new Error(`Insufficient stock for "${itemName}". Only ${currentStock} left.`);
-        }
-        if (item.offer && item.offer.status !== "ACTIVE") {
-          throw new Error(`The offer for "${itemName}" is no longer available.`);
+      // A. Validate Stock (OFFER ONLY)
+      for (const item of validItems) {
+        if (!item.offer.isActive || item.offer.stockQuantity < item.quantity) {
+          throw new Error(`Insufficient stock for "${item.offer.variant.product.title}". Only ${item.offer.stockQuantity} left.`);
         }
       }
 
@@ -149,25 +117,28 @@ export async function POST(req: Request) {
             },
           },
           items: {
-            create: cartItems.map((item) => {
-              const isOffer = !!item.offer;
-              const sellerId = isOffer ? item.offer?.sellerId : item.variant?.product?.sellerId;
-
-              return {
-                variant: { connect: { id: item.variantId } },
-                title: isOffer ? item.offer!.variant.product.title : item.variant!.product.title,
-                price: isOffer ? parseFloat(item.offer!.price.toString()) : parseFloat(item.variant!.price.toString()),
-                quantity: item.quantity,
-                sellerId: sellerId || "unknown",
-                offer: isOffer ? { connect: { id: item.offer!.id } } : undefined,
-                status: "PENDING",
-              };
-            }),
+            create: validItems.map((item) => ({
+              variant: { connect: { id: item.offer!.variantId } },
+              title: item.offer!.variant.product.title,
+              price: parseFloat(item.offer!.price.toString()),
+              quantity: item.quantity,
+              sellerId: item.offer!.sellerId,
+              offer: { connect: { id: item.offer!.id } }, // ✅ Link to Offer
+              status: "PENDING",
+            })),
           },
         },
       });
 
-      // ✅ FIX 2: Atomically increment discount usage OUTSIDE the items map
+      // C. Deduct Stock (OFFER ONLY)
+      for (const item of validItems) {
+        await tx.sellerOffer.update({
+          where: { id: item.offer!.id },
+          data: { stockQuantity: { decrement: item.quantity } },
+        });
+      }
+
+      // D. Increment Discount Usage
       if (validated.discountId) {
         await tx.discountCode.update({
           where: { id: validated.discountId },
@@ -175,23 +146,7 @@ export async function POST(req: Request) {
         });
       }
       
-            // C. Deduct Stock Atomically
-      for (const item of cartItems) {
-        if (item.offerId) {
-          // ✅ Deduct from the Seller's specific Offer
-          await tx.sellerOffer.update({
-            where: { id: item.offerId },
-            data: { stockQuantity: { decrement: item.quantity } },
-          });
-        } else if (item.variantId) {
-          // ✅ Fallback to Variant if no Offer
-          await tx.productVariant.update({
-            where: { id: item.variantId },
-            data: { stockQuantity: { decrement: item.quantity } },
-          });
-        }
-      }
-      // D. Clear purchased items from cart
+      // E. Clear purchased items from cart
       await tx.cartItem.deleteMany({
         where: { id: { in: validated.cartItemIds } },
       });
@@ -239,6 +194,6 @@ export async function POST(req: Request) {
     if (error.message?.includes("Insufficient stock")) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
-    return NextResponse.json({ error: "Failed to process checkout" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process checkout", details: error.message }, { status: 500 });
   }
 }
