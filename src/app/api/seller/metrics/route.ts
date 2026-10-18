@@ -17,21 +17,21 @@ export async function GET() {
       select: { id: true, businessName: true }
     });
 
-    // ✅ FIX: Handle missing profile gracefully after DB reset
+    // ✅ FIX: If no profile exists (e.g., after DB reset), return zeros
     if (!sellerProfile) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         totalRevenue: 0,
         totalOrders: 0,
         pendingOrders: 0,
         completedOrders: 0,
         recentOrders: [],
         businessName: "New Seller"
-      }, { status: 200 });
+      });
     }
 
     const sellerId = sellerProfile.id;
 
-    // 2. Fetch Orders (Safe even if empty)
+    // 2. Fetch Orders
     const allOrders = await db.order.findMany({
       where: {
         items: {
@@ -84,7 +84,7 @@ export async function GET() {
 
   } catch (error: any) {
     console.error("🚨 Seller Metrics Crash:", error);
-    // ✅ FIX: Return JSON error instead of HTML
+    // ✅ FIX: Return JSON error to prevent HTML response
     return NextResponse.json(
       { error: "Failed to load dashboard", details: error.message },
       { status: 500 }
