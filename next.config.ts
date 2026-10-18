@@ -1,5 +1,4 @@
-// next.config.ts
-import type { NextConfig } from "next";
+ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
@@ -7,21 +6,25 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
-        pathname: "/**", // Allows all paths under this domain
+        pathname: "/**", 
       },
-      
-      // Add other domains here if you use them (e.g., your own CDN)
     ],
   },
 
-// 👇 ADD THESE TWO BLOCKS TO IGNORE BUILD ERRORS
+  // ✅ ADD THIS: Allow larger image uploads (up to 10MB)
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+
+  // 👇 KEEP THESE: To ignore build errors during deployment
   typescript: {
     ignoreBuildErrors: true,
   },
   eslint: {
     ignoreDuringBuilds: true,
   },
-
 };
 
 export default nextConfig;
