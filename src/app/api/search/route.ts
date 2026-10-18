@@ -75,39 +75,41 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    // ✅ FORMAT DATA FOR FRONTEND
-    const formattedProducts = products.map((product) => {
-      // Inside src/app/api/search/route.ts, in the formattedProducts map
+    // Inside src/app/api/search/route.ts
 
-// 1. Find the BEST active offer for this product
-const bestOffer = product.offers.find(o => o.isActive && o.stockQuantity > 0);
+        // Inside src/app/api/search/route.ts
 
-// 2. Fallback to variant if no offer exists
-const bestVariant = product.variants[0];
+const formattedProducts = products.map((product) => {
+  // ✅ FIX: Safely find the best active offer
+  const bestOffer = product.offers?.find((o: any) => o.isActive && o.stockQuantity > 0);
+  
+  // ✅ FIX: Safely find the first variant
+  const bestVariant = product.variants?.[0];
 
-return {
-  id: product.id,
-  title: product.title,
-  slug: product.slug,
-  
-  // ✅ FIX: Use Offer Price/Stock first, then Variant
-  price: bestOffer ? parseFloat(bestOffer.price.toString()) : (bestVariant ? parseFloat(bestVariant.price.toString()) : 0),
-  originalPrice: bestOffer ? (bestOffer.compareAtPrice ? parseFloat(bestOffer.compareAtPrice.toString()) : null) : null,
-  
-  // ✅ CRITICAL: Use Offer Stock
-  stockQuantity: bestOffer ? bestOffer.stockQuantity : (bestVariant ? bestVariant.stockQuantity : 0),
-  
-  // ✅ CRITICAL: Pass the IDs so checkout knows which one to use
-  bestOfferId: bestOffer?.id || null,
-  bestVariantId: bestVariant?.id || null,
-  
-  imageUrl: product.images[0]?.url || null,
-  sellerName: bestOffer ? bestOffer.seller.businessName : "iBUY Marketplace",
-  sellerId: bestOffer ? bestOffer.sellerId : product.sellerId,
-  inStock: (bestOffer ? bestOffer.stockQuantity : (bestVariant?.stockQuantity || 0)) > 0,
-};
-    });
-
+  return {
+    id: product.id,
+    title: product.title,
+    slug: product.slug,
+    
+    // ✅ FIX: Use Offer data if it exists, otherwise fall back to Variant
+    price: bestOffer 
+      ? parseFloat(bestOffer.price.toString()) 
+      : (bestVariant ? parseFloat(bestVariant.price.toString()) : 0),
+      
+    stockQuantity: bestOffer 
+      ? bestOffer.stockQuantity 
+      : (bestVariant ? bestVariant.stockQuantity : 0),
+      
+    // ✅ CRITICAL: Pass these IDs so the cart knows which one to use
+    bestOfferId: bestOffer?.id || null,
+    bestVariantId: bestVariant?.id || null,
+    
+    imageUrl: product.images?.[0]?.url || null,
+    sellerName: bestOffer ? bestOffer.seller?.businessName : "iBUY Marketplace",
+    sellerId: bestOffer ? bestOffer.sellerId : product.sellerId,
+    inStock: (bestOffer ? bestOffer.stockQuantity : (bestVariant?.stockQuantity || 0)) > 0,
+  };
+});
     return NextResponse.json({ 
       products: formattedProducts, 
       total,

@@ -297,7 +297,7 @@ export default function HomePage() {
                               productId: product.id,
                             
                               variantId: product.bestVariantId || product.id, // 👈 USE BEST VARIANT
-                              offerId: product.bestOfferId || null,           // 👈 USE BEST OFFER
+                              offerId: product.bestOfferId ,         // 👈 USE BEST OFFER
                               title: product.title,
                               price: product.price,
                               imageUrl: product.imageUrl,
