@@ -77,10 +77,32 @@ export async function POST(req: Request) {
     
     // 3. Calculate Server-Side Subtotal
     let serverSubtotal = 0;
-    for (const item of cartItems) {
-      const price = item.offer ? parseFloat(item.offer.price.toString()) : parseFloat(item.variant.price.toString());
-      serverSubtotal += price * item.quantity;
-    }
+          // A. Concurrency Safety: Re-validate stock
+      for (const item of cartItems) {
+        let currentStock = 0;
+        let itemName = "Unknown Item";
+
+        // ✅ FIX: Check Seller Offer Stock FIRST
+        if (item.offerId && item.offer) {
+          currentStock = item.offer.stockQuantity;
+          itemName = item.offer.variant.product.title;
+          
+          if (item.offer.status !== "ACTIVE") {
+             throw new Error(`The offer for "${itemName}" is no longer active.`);
+          }
+        } 
+        // ✅ Then check Variant Stock only if no Offer exists
+        else if (item.variant) {
+          currentStock = item.variant.stockQuantity;
+          itemName = item.variant.product.title;
+        }
+
+        console.log(`🔍 Checking Stock for ${itemName}: OfferID=${item.offerId}, Stock=${currentStock}`);
+
+        if (currentStock < item.quantity) {
+          throw new Error(`Insufficient stock for "${itemName}". Only ${currentStock} left.`);
+        }
+      }
 
     // Apply Discount to Total
     const discountAmount = validated.discountAmount || 0;
@@ -153,21 +175,22 @@ export async function POST(req: Request) {
         });
       }
       
-      // C. Deduct Stock
+            // C. Deduct Stock Atomically
       for (const item of cartItems) {
         if (item.offerId) {
+          // ✅ Deduct from the Seller's specific Offer
           await tx.sellerOffer.update({
             where: { id: item.offerId },
             data: { stockQuantity: { decrement: item.quantity } },
           });
         } else if (item.variantId) {
+          // ✅ Fallback to Variant if no Offer
           await tx.productVariant.update({
             where: { id: item.variantId },
             data: { stockQuantity: { decrement: item.quantity } },
           });
         }
       }
-      
       // D. Clear purchased items from cart
       await tx.cartItem.deleteMany({
         where: { id: { in: validated.cartItemIds } },
