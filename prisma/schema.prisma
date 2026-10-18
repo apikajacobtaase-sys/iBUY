@@ -385,12 +385,18 @@ model CartItem {
 // 7. ORDERS, PAYMENTS & FULFILLMENT
 // ============================================================
 
-model Order {
+ model Order {
   id                String      @id @default(cuid())
   userId            String      @map("user_id")
   user              User        @relation(fields: [userId], references: [id])
   totalAmount       Decimal     @map("total_amount") @db.Decimal(10, 2)
-  deliveryFee       Decimal   @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  deliveryFee       Decimal     @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  
+  // ✅ ADD THESE FIELDS
+  discountCodeId    String?     @map("discount_code_id")
+  discountAmount    Decimal     @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  discountCode      DiscountCode? @relation(fields: [discountCodeId], references: [id]) // The relation
+
   deliveryRecipient   String?   @map("delivery_recipient")
   deliveryPhone       String?   @map("delivery_phone")
   deliveryRegion    String?   @map("delivery_region")
@@ -409,11 +415,13 @@ model Order {
   payment           Payment?
   shipment          Shipment?
   returns           Return[]
-  reviews       SellerReview[]
+  reviews           SellerReview[]
 
   @@index([userId])
   @@map("orders")
 }
+
+
 
 model OrderItem {
   id              String         @id @default(cuid())
@@ -999,7 +1007,7 @@ model DiscountCode {
   code           String        @unique
   type           DiscountType
   value          Decimal       @db.Decimal(10, 2) // Percentage (0-100) or Fixed Amount
-  
+  orders      Order[]  // ✅ THIS IS THE MISSING OPPOSITE RELATION
   minOrderAmount Decimal?      @map("min_order_amount") @db.Decimal(10, 2)
   maxDiscount    Decimal?      @map("max_discount") @db.Decimal(10, 2) // Cap for percentage
   
