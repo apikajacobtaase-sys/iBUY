@@ -93,58 +93,54 @@ export async function GET() {
     return NextResponse.json({ error: "Failed to fetch cart" }, { status: 500 });
   }
 }
+   
+
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    
     if (!session?.user?.id) {
-      return NextResponse.json({ success: true, message: "Guest cart updated locally" });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { variantId, offerId, quantity = 1, isSelected = true } = await req.json();
+    const body = await req.json();
+    console.log("🔍 Cart API Received:", body); // Debug log
 
+    const { variantId, offerId, quantity = 1, isSelected = true } = body;
+
+    // ✅ VALIDATION: Ensure we have at least a variantId
     if (!variantId) {
       return NextResponse.json({ error: "Variant ID is required" }, { status: 400 });
     }
 
-    // 1. Validate Stock
-    let targetStock: number;
-    if (offerId) {
-      const offer = await db.sellerOffer.findUnique({ where: { id: offerId } });
-      if (!offer || offer.status !== "ACTIVE" || offer.stockQuantity < quantity) {
-        return NextResponse.json({ error: "Offer unavailable or insufficient stock" }, { status: 400 });
-      }
-      targetStock = offer.stockQuantity;
-    } else {
-      const variant = await db.productVariant.findUnique({ where: { id: variantId } });
-      if (!variant || variant.stockQuantity < quantity) {
-        return NextResponse.json({ error: "Invalid or out of stock item" }, { status: 400 });
-      }
-      targetStock = variant.stockQuantity;
-    }
+    // Find or Create Cart for the user
+    let cart = await db.cart.findUnique({
+      where: { userId: session.user.id },
+    });
 
-    // 2. Find or Create the user's cart
-    let cart = await db.cart.findUnique({ where: { userId: session.user.id } });
     if (!cart) {
-      cart = await db.cart.create({ data: { userId: session.user.id } });
+      cart = await db.cart.create({
+        data: { userId: session.user.id },
+      });
     }
 
-    // 3. Find existing cart item or create a new one (No named constraint needed!)
-    let cartItem = await db.cartItem.findFirst({
+    // Check if item already exists in cart
+    const existingItem = await db.cartItem.findFirst({
       where: {
         cartId: cart.id,
         variantId: variantId,
-        offerId: offerId || null,
+        offerId: offerId || null, // Handle null vs undefined
       },
     });
 
-    if (cartItem) {
-      // Update existing item quantity
+    let cartItem;
+
+    if (existingItem) {
+      // Update quantity if it exists
       cartItem = await db.cartItem.update({
-        where: { id: cartItem.id },
-        data: {
+        where: { id: existingItem.id },
+        data: { 
           quantity: { increment: quantity },
-          isSelected: true,
+          isSelected: isSelected 
         },
       });
     } else {
@@ -155,22 +151,16 @@ export async function POST(req: Request) {
           variantId: variantId,
           offerId: offerId || null,
           quantity: quantity,
-          isSelected: true,
+          isSelected: isSelected,
         },
       });
     }
 
-    // 4. Return the real Database ID so the frontend can sync
-    return NextResponse.json({ 
-      success: true, 
-      cartItem: {
-        id: cartItem.id,
-        quantity: cartItem.quantity,
-      }
-    });
-  } catch (error: any) {
-    console.error("🚨 Cart POST error:", error);
-    return NextResponse.json({ error: "Failed to add to cart", details: error.message }, { status: 500 });
+    return NextResponse.json({ cartItem }, { status: 200 });
+
+  } catch (error) {
+    console.error("Cart API Error:", error);
+    return NextResponse.json({ error: "Failed to update cart" }, { status: 500 });
   }
 }
 export async function PATCH(req: Request) {

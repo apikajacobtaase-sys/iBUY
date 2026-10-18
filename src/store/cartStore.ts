@@ -98,16 +98,17 @@ export const useCartStore = create<CartState>()(
         
         if (addedItem?.variantId) {
           try {
-            const res = await fetch("/api/cart", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                variantId: addedItem.variantId, 
-                offerId: addedItem.offerId,
-                quantity: addedItem.quantity,
-                isSelected: true
-              }),
-            });
+             // Inside addItem in cartStore.ts
+const res = await fetch("/api/cart", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ 
+    variantId: addedItem.variantId, 
+    offerId: addedItem.offerId || null, // ✅ Ensure null is sent if undefined
+    quantity: addedItem.quantity,
+    isSelected: true
+  }),
+});
             const data = await res.json();
             const realItem = data.cartItem || data.item || data;
             

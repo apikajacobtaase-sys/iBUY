@@ -6,19 +6,21 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
-        pathname: "/**", 
+        pathname: "/**",
+      },
+      // ✅ ADD THIS: Allow placeholder images for testing
+      {
+        protocol: "https",
+        hostname: "placehold.co",
+        pathname: "/**",
       },
     ],
   },
-
-  // ✅ ADD THIS: Allow larger image uploads (up to 10MB)
   api: {
     bodyParser: {
       sizeLimit: '10mb',
     },
   },
-
-  // 👇 KEEP THESE: To ignore build errors during deployment
   typescript: {
     ignoreBuildErrors: true,
   },
