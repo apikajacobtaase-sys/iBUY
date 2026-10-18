@@ -48,7 +48,7 @@ export async function GET(request: Request) {
           },
           seller: {
             select: {
-              storeName: true,
+              businessName: true
             },
           },
           variants: {
@@ -88,7 +88,7 @@ export async function GET(request: Request) {
         price: bestOffer ? parseFloat(bestOffer.price.toString()) : (bestVariant ? parseFloat(bestVariant.price.toString()) : 0),
         compareAtPrice: bestVariant ? parseFloat(bestVariant.compareAtPrice?.toString() || "0") : 0,
         imageUrl: product.images[0]?.url || null,
-        sellerName: product.seller?.storeName || "iBUY Marketplace",
+        sellerName: product.seller?.businessName || "iBUY Marketplace",
         stockQuantity: bestOffer ? bestOffer.stockQuantity : (bestVariant?.stockQuantity || 0),
         bestVariantId: bestVariant?.id || null,
         bestOfferId: bestOffer?.id || null,
