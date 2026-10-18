@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     }
 
     // 2. REVALIDATE Delivery Zone (FIXED: Use localityId, NOT address.locality)
-    console.log("🔍 Checking delivery zone for localityId:", validated.localityId);
+   // console.log("🔍 Checking delivery zone for localityId:", validated.localityId);
     
     const zoneLocality = await db.deliveryZoneLocality.findFirst({
       where: {
@@ -146,12 +146,11 @@ export async function POST(req: Request) {
               currency: "GHS",
             },
           },
-        items: {
+              items: {
                create: cartItems.map((item) => {
           const isOffer = !!item.offer;
           
           // ✅ SAFELY GET SELLER ID
-          // If it's an offer, get seller from offer. If it's a variant, get it from the product.
           const sellerId = isOffer 
             ? item.offer?.sellerId 
             : item.variant?.product?.sellerId;
@@ -166,11 +165,8 @@ export async function POST(req: Request) {
               : parseFloat(item.variant!.price.toString()),
             quantity: item.quantity,
             
-            // ✅ ADD THIS LINE: Explicitly set the sellerId
+            // ✅ FIX: Just set the ID directly. It's safer than 'connect' in this context.
             sellerId: sellerId || "unknown", 
-            
-            // You can keep the relation connect if you want, but sellerId is the critical fix
-            seller: sellerId ? { connect: { id: sellerId } } : undefined,
             
             offer: isOffer ? { connect: { id: item.offer!.id } } : undefined,
             status: "PENDING",
@@ -181,28 +177,25 @@ export async function POST(req: Request) {
       });
 
       // C. Deduct Stock Atomically (Respecting Separate Inventory Pools)
-      console.log("📦 STARTING STOCK DEDUCTION for", cartItems.length, "items");
-      
+      //console.log("📦 STARTING STOCK DEDUCTION for", cartItems.length, "items");
+           // A. Concurrency Safety: Re-validate stock
       for (const item of cartItems) {
-        const qty = item.quantity;
-        console.log(`🔍 Cart Item Data: offerId=${item.offerId}, variantId=${item.variantId}, qty=${qty}`);
+        // ✅ FIX: Check Offer Stock first, then Variant Stock
+        const currentStock = item.offer 
+          ? item.offer.stockQuantity 
+          : item.variant.stockQuantity;
 
-        if (item.offerId) {
-          console.log(`⬇️ Deducting from SellerOffer ID: ${item.offerId}`);
-          await tx.sellerOffer.update({
-            where: { id: item.offerId },
-            data: { stockQuantity: { decrement: qty } },
-          });
-          console.log(`✅ SUCCESS: SellerOffer stock updated`);
-        } else if (item.variantId) {
-          console.log(`⬇️ Deducting from Global ProductVariant ID: ${item.variantId}`);
-          await tx.productVariant.update({
-            where: { id: item.variantId },
-            data: { stockQuantity: { decrement: qty } },
-          });
-          console.log(`✅ SUCCESS: Global Variant stock updated`);
-        } else {
-          console.error("❌ CRITICAL ERROR: Cart item has NO variantId and NO offerId!", item);
+        if (currentStock < item.quantity) {
+          const itemName = item.offer 
+            ? item.offer.variant.product.title 
+            : item.variant.product.title;
+            
+          throw new Error(`Insufficient stock for "${itemName}". Only ${currentStock} left.`);
+        }
+
+        // ✅ FIX: Ensure the Offer is still Active
+        if (item.offer && item.offer.status !== "ACTIVE") {
+           throw new Error(`The offer for "${item.offer.variant.product.title}" is no longer available.`);
         }
       }
       

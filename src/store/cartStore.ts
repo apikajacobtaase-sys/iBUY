@@ -1,9 +1,9 @@
-// src/store/cartStore.ts
+ // src/store/cartStore.ts
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export interface CartItem {
-  id: string; // This MUST be the database ID once synced
+  id: string;
   productId: string;
   variantId?: string;
   offerId?: string | null;
@@ -29,12 +29,10 @@ interface CartState {
   clearGuestCart: () => void;
   syncFromDB: (items: CartItem[]) => void;
   
-  
   selectedItems: () => CartItem[];
   selectedTotalAmount: () => number;
   selectedTotalItems: () => number;
   totalItems: () => number;
-  
 }
 
 export const useCartStore = create<CartState>()(
@@ -47,16 +45,28 @@ export const useCartStore = create<CartState>()(
       selectedTotalItems: () => get().selectedItems().reduce((sum, item) => sum + item.quantity, 0),
       totalItems: () => get().items.reduce((sum, item) => sum + item.quantity, 0),
 
-           addItem: async (newItem) => {
-        // 1. Optimistic UI update with a temporary UUID
+      addItem: async (newItem) => {
+        // ✅ SAFETY CHECK: Ensure stockQuantity exists
+        const availableStock = newItem.stockQuantity ?? 0;
+        if (availableStock === 0) {
+          alert("This item is out of stock.");
+          return;
+        }
+
         set((state) => {
           const existing = state.items.find(
             (i) => i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
           );
 
           if (existing) {
-            const maxStock = newItem.stockQuantity ?? 999;
-            const newQuantity = Math.min(existing.quantity + (newItem.quantity || 1), maxStock);
+            // ✅ HARD CAP: Do not allow adding more than available stock
+            const newQuantity = Math.min(existing.quantity + (newItem.quantity || 1), availableStock);
+            
+            if (newQuantity <= existing.quantity) {
+              alert(`Sorry, only ${availableStock} items are available.`);
+              return state; // Prevent update
+            }
+
             return {
               items: state.items.map((i) =>
                 i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
@@ -66,17 +76,21 @@ export const useCartStore = create<CartState>()(
             };
           }
 
-          const maxStock = newItem.stockQuantity ?? 999;
-          const tempId = crypto.randomUUID(); // Temporary UUID
           return { 
             items: [
               ...state.items, 
-              { ...newItem, id: tempId, quantity: Math.min(newItem.quantity || 1, maxStock), isSelected: true }
+              { 
+                ...newItem, 
+                id: crypto.randomUUID(), 
+                quantity: Math.min(newItem.quantity || 1, availableStock), 
+                isSelected: true,
+                stockQuantity: availableStock // Ensure this is saved
+              } 
             ] 
           };
         });
 
-        // 2. Sync to DB
+        // Sync to DB
         const state = get();
         const addedItem = state.items.find(
           i => i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
@@ -95,29 +109,23 @@ export const useCartStore = create<CartState>()(
               }),
             });
             const data = await res.json();
-            
-            // 👇 BULLETPROOF ID EXTRACTION
-            // The API might return { cartItem: {...} }, { item: {...} }, or just the item directly
             const realItem = data.cartItem || data.item || data;
             
-            // Prisma IDs (cuid) do NOT have dashes. UUIDs DO have dashes.
             if (realItem && realItem.id && !realItem.id.includes("-")) {
               set((state) => ({
                 items: state.items.map((i) => 
                   i.productId === addedItem.productId && i.variantId === addedItem.variantId && i.offerId === addedItem.offerId
-                    ? { ...i, id: realItem.id } // Replace UUID with real DB ID
+                    ? { ...i, id: realItem.id }
                     : i
                 )
               }));
-              console.log("✅ Cart synced with DB. Real ID:", realItem.id);
-            } else {
-              console.warn("⚠️ API did not return a valid DB ID. Are you logged in?", data);
             }
           } catch (error) {
             console.error("Failed to sync cart add to DB:", error);
           }
         }
       },
+
       removeItem: async (id) => {
         const item = get().items.find((i) => i.id === id);
         set((state) => ({
@@ -146,8 +154,13 @@ export const useCartStore = create<CartState>()(
           return;
         }
 
+        // ✅ HARD CAP: Do not allow updating to more than available stock
         const maxStock = item.stockQuantity ?? 999;
         const cappedQuantity = Math.min(quantity, maxStock);
+
+        if (cappedQuantity < quantity) {
+           alert(`Sorry, only ${maxStock} items are available.`);
+        }
 
         set((state) => ({
           items: state.items.map((i) =>
@@ -175,14 +188,12 @@ export const useCartStore = create<CartState>()(
 
         const newIsSelected = !currentItem.isSelected;
 
-        // 1. Optimistic UI update
         set((state) => ({
           items: state.items.map((i) =>
             i.id === id ? { ...i, isSelected: newIsSelected } : i
           ),
         }));
 
-        // 2. Sync to DB
         try {
           await fetch("/api/cart", {
             method: "PATCH",
@@ -207,20 +218,16 @@ export const useCartStore = create<CartState>()(
             i.stockQuantity > 0 ? { ...i, isSelected: newSelectionState } : i
           ),
         }));
-        
-        // Note: For simplicity, toggleSelectAll doesn't bulk-sync to DB here, 
-        // but individual toggles do. You can add bulk sync if needed.
       },
 
       clearCart: () => set({ items: [] }),
       syncFromDB: (items) => set({ items }),
       clearGuestCart: () => {
-    set({ items: [] });
-    // Also clear it from localStorage so it doesn't come back on refresh
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("ibuy-cart"); // 👈 Change "ibuy-cart" to whatever your localStorage key is
-    }
-  },
+        set({ items: [] });
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("ibuy-cart-storage");
+        }
+      },
     }),
     {
       name: "ibuy-cart-storage",
