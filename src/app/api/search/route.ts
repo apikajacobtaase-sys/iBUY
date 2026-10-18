@@ -16,109 +16,85 @@ async function generateEmbedding(text: string): Promise<number[]> {
   return response.data[0].embedding;
 }
 
-export async function GET(req: Request) {
+
+// src/app/api/search/route.ts
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const query = searchParams.get("q")?.trim() || "";
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get("q") || "";
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = parseInt(searchParams.get("limit") || "20");
+    const skip = (page - 1) * limit;
 
-    if (!query) {
-      return NextResponse.json({ products: [], total: 0 });
-    }
-
-    // 1. Traditional Keyword Search (Fast, exact matches)
-    const keywordProducts = await db.product.findMany({
-      where: {
-        status: "ACTIVE",
-        OR: [
-          { title: { contains: query, mode: "insensitive" } },
-          { description: { contains: query, mode: "insensitive" } },
-          { slug: { contains: query, mode: "insensitive" } },
-        ],
-      },
-      include: {
-        variants: { take: 1, select: { price: true, stockQuantity: true } },
-        images: { take: 1, select: { url: true } },
-        category: { select: { name: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-
-    // 2. Semantic Search (For longer, intent-based queries)
-    let semanticProducts: any[] = [];
-    if (query.length > 3) {
-      try {
-        const queryEmbedding = await generateEmbedding(query);
-        
-        // Use raw SQL for cosine similarity (<=>) with pgvector
-        const rawResults = await db.$queryRaw<any[]>`
-          SELECT 
-            id, title, slug, description, status, "categoryId", "sellerId", "createdAt",
-            (1 - (embedding <=> ${queryEmbedding}::vector)) as similarity
-          FROM "Product"
-          WHERE status = 'ACTIVE' AND embedding IS NOT NULL
-          ORDER BY similarity DESC
-          LIMIT 10
-        `;
-
-        // Fetch full relations for the semantic results
-        const productIds = rawResults.map((r: any) => r.id);
-        semanticProducts = await db.product.findMany({
-          where: { id: { in: productIds } },
-          include: {
-            variants: { take: 1, select: { price: true, stockQuantity: true } },
-            images: { take: 1, select: { url: true } },
-            category: { select: { name: true } },
+    // Example Prisma query (adjust to match your actual schema)
+    const [products, total] = await Promise.all([
+      db.product.findMany({
+        where: {
+          OR: [
+            { title: { contains: query, mode: 'insensitive' } },
+            { description: { contains: query, mode: 'insensitive' } },
+          ],
+          isActive: true,
+        },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          variants: {
+            include: {
+              offers: {
+                where: { isActive: true },
+                orderBy: { price: 'asc' },
+                take: 1,
+              },
+            },
           },
-        });
+          seller: { select: { storeName: true } },
+        },
+      }),
+      db.product.count({
+        where: {
+          OR: [
+            { title: { contains: query, mode: 'insensitive' } },
+            { description: { contains: query, mode: 'insensitive' } },
+          ],
+          isActive: true,
+        },
+      }),
+    ]);
 
-        // Sort semantic products to match the raw SQL order
-        semanticProducts.sort((a, b) => {
-          const simA = rawResults.find((r: any) => r.id === a.id)?.similarity || 0;
-          const simB = rawResults.find((r: any) => r.id === b.id)?.similarity || 0;
-          return simB - simA;
-        });
-      } catch (embedError) {
-        console.error("Semantic search embedding failed:", embedError);
-      }
-    }
-
-    // 3. Merge and deduplicate results (Keyword first, then Semantic)
-    const combinedMap = new Map();
-    
-    keywordProducts.forEach((p) => {
-      combinedMap.set(p.id, {
-        ...p,
-        price: p.variants[0]?.price || 0,
-        stock: p.variants[0]?.stockQuantity || 0,
-        imageUrl: p.images[0]?.url || null,
-        categoryName: p.category?.name || "Uncategorized",
-        searchType: "keyword",
-      });
+    // Format products for the frontend
+    const formattedProducts = products.map((product) => {
+      const bestVariant = product.variants[0];
+      const bestOffer = bestVariant?.offers[0];
+      return {
+        id: product.id,
+        title: product.title,
+        slug: product.slug,
+        price: bestOffer ? parseFloat(bestOffer.price.toString()) : 0,
+        compareAtPrice: bestVariant ? parseFloat(bestVariant.basePrice.toString()) : 0,
+        imageUrl: product.images[0]?.url || null,
+        sellerName: product.seller?.storeName || "Unknown Seller",
+        stockQuantity: bestVariant?.stockQuantity || 0,
+      };
     });
 
-    semanticProducts.forEach((p) => {
-      if (!combinedMap.has(p.id)) {
-        combinedMap.set(p.id, {
-          ...p,
-          price: p.variants[0]?.price || 0,
-          stock: p.variants[0]?.stockQuantity || 0,
-          imageUrl: p.images[0]?.url || null,
-          categoryName: p.category?.name || "Uncategorized",
-          searchType: "semantic",
-        });
-      }
+    return NextResponse.json({ 
+      products: formattedProducts, 
+      total,
+      page,
+      totalPages: Math.ceil(total / limit)
     });
 
-    const finalProducts = Array.from(combinedMap.values()).slice(0, 20);
-
-    return NextResponse.json({
-      products: finalProducts,
-      total: finalProducts.length,
-      query,
-    });
   } catch (error) {
-    console.error("🚨 Search error:", error);
-    return NextResponse.json({ error: "Failed to search products" }, { status: 500 });
+    console.error("Search API Error:", error);
+    // ✅ CRITICAL: Always return JSON, even on error
+    return NextResponse.json(
+      { error: "Failed to fetch products", details: String(error) },
+      { status: 500 }
+    );
   }
 }

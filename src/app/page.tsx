@@ -87,44 +87,53 @@ export default function HomePage() {
     }
   };
 
-  const loadProducts = async (pageNum: number, reset: boolean) => {
+   const loadProducts = async (pageNum: number, reset: boolean) => {
     try {
+      // ✅ FIX 1: Use the working /api/search endpoint instead of /api/products
+      // ✅ FIX 2: Use an absolute URL to be safe in all environments
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ibuy-apikajacobtaase-sys.vercel.app";
       const params = new URLSearchParams({
+        q: "", // Empty query for "all products"
         page: pageNum.toString(),
         limit: "12",
-        sort: "newest",
       });
 
-      const res = await fetch(`/api/products?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        const newProducts = data.products || [];
-        
-        if (reset && newProducts.length > 0) {
-          console.log("✅ FRONTEND RECEIVED PRODUCT:", newProducts[0]);
-        }
+      const res = await fetch(`${baseUrl}/api/search?${params}`, {
+        cache: "no-store"
+      });
 
-        if (reset) {
-          setProducts(newProducts);
-        } else {
-          setProducts((prev) => {
-            const existingIds = new Set(prev.map((p) => p.id));
-            const uniqueNew = newProducts.filter((p: Product) => !existingIds.has(p.id));
-            return [...prev, ...uniqueNew];
-          });
-        }
-        
-        setHasMore(data.hasMore);
-        setPage(pageNum);
-      } else {
+      // ✅ FIX 3: SAFETY CHECK - If API returns HTML (404/500), don't crash
+      if (!res.ok) {
+        console.error("API Error:", res.status);
         setHasMore(false);
+        return;
       }
+
+      const data = await res.json();
+      const newProducts = data.products || [];
+      
+      if (reset && newProducts.length > 0) {
+        console.log("✅ FRONTEND RECEIVED PRODUCT:", newProducts[0]);
+      }
+
+      if (reset) {
+        setProducts(newProducts);
+      } else {
+        setProducts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const uniqueNew = newProducts.filter((p: Product) => !existingIds.has(p.id));
+          return [...prev, ...uniqueNew];
+        });
+      }
+      
+      setHasMore(data.hasMore || false);
+      setPage(pageNum);
     } catch (error) {
       console.error("Failed to load products:", error);
       setHasMore(false);
     }
   };
-
+  
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
