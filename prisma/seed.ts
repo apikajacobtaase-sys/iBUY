@@ -1,93 +1,138 @@
- // prisma/seed.ts
+ // prisma/seed-ghana.ts
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import {
+  getStates,
+  getLgas,
+  getTowns,
+} from '@softalxhq/location-selector';
 
 const prisma = new PrismaClient();
 
+/**
+ * Extract name from value that could be string or object
+ */
+function extractName(value: any): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value && typeof value === 'object' && 'name' in value) {
+    return String(value.name);
+  }
+  return String(value);
+}
+
 async function main() {
-  console.log('🌱 Starting seed...');
+  console.log('🌱 Seeding Ghana location data...');
 
-  // 1. Create a Category
-  const category = await prisma.category.upsert({
-    where: { slug: 'electronics' },
+  // 1. Create or get Ghana country
+  const ghana = await prisma.country.upsert({
+    where: { code: 'GH' },
     update: {},
     create: {
-      name: 'Electronics',
-      slug: 'electronics',
-      isActive: true,
-      // description: 'Gadgets...', // ❌ Removed: Not in your Category model
-    },
-  });
-
-  // 2. Create a User (Seller Owner)
-  const hashedPassword = await bcrypt.hash('password123', 10);
-  
-  const user = await prisma.user.upsert({
-    where: { email: 'seller@example.com' },
-    update: {},
-    create: {
-      email: 'seller@example.com',
-      passwordHash: hashedPassword, // ✅ Matches your schema
-      firstName: 'John',
-      lastName: 'Doe',
-      role: 'SELLER_OWNER', // ✅ Matches your UserRole enum
+      name: 'Ghana',
+      code: 'GH',
       isActive: true,
     },
   });
 
-  // 3. Create a Seller Profile
-  const seller = await prisma.sellerProfile.upsert({
-    where: { userId: user.id },
-    update: {},
-    create: {
-      userId: user.id,
-      businessName: 'Tech Haven GH', // ✅ Matches your schema
-      description: 'The best electronics in Ghana',
-      isActive: true, // ✅ Matches your schema
-      verificationStatus: 'VERIFIED', // ✅ Matches your VerificationStatus enum
-    },
-  });
+  console.log(`✅ Created country: ${ghana.name}`);
 
-  // 4. Create a Product
-  const product = await prisma.product.create({
-    data: {
-      title: 'Seed Smartphone',
-      slug: 'seed-smartphone',
-      description: 'A high-quality smartphone for testing.',
-      categoryId: category.id,
-      sellerId: seller.id,
-      status: 'ACTIVE', // ✅ Matches your ProductStatus enum
-      images: {
-        create: {
-          url: 'https://placehold.co/600x400?text=Smartphone',
-          isPrimary: true,
+  // 2. Get all regions in Ghana
+  const regions = getStates('GH');
+  console.log(`📍 Found ${regions.length} regions`);
+
+  for (const region of regions) {
+    const regionName = extractName(region);
+    
+    // Create or get region
+    const createdRegion = await prisma.region.upsert({
+      where: {
+        name_countryId: {
+          name: regionName,
+          countryId: ghana.id,
         },
       },
-      variants: {
-        create: {
-          sku: 'SEED-PHONE-001',
-          price: 2500.00,
-          stockQuantity: 10,
-          isActive: true,
-          sellerOffers: {
-            create: {
-              sellerId: seller.id,
-              price: 2500.00,
-              stockQuantity: 10,
-              status: 'ACTIVE', // ✅ Matches your OfferStatus enum
-            },
+      update: {},
+      create: {
+        name: regionName,
+        code: generateCode(regionName),
+        countryId: ghana.id,
+        isActive: true,
+      },
+    });
+
+    console.log(`  📍 Region: ${createdRegion.name}`);
+
+    // 3. Get all districts in this region
+    const districts = getLgas('GH', regionName);
+    
+    for (const district of districts) {
+      const districtName = extractName(district);
+      
+      // Create or get district
+      const createdDistrict = await prisma.district.upsert({
+        where: {
+          name_regionId: {
+            name: districtName,
+            regionId: createdRegion.id,
           },
         },
-      },
-    },
-  });
+        update: {},
+        create: {
+          name: districtName,
+          code: generateCode(districtName),
+          regionId: createdRegion.id,
+          isActive: true,
+        },
+      });
 
-  console.log('✅ Seed completed successfully!');
+      // 4. Get all localities/towns in this district
+      const localities = getTowns('GH', regionName, districtName);
+      
+      let localityCount = 0;
+      for (const locality of localities) {
+        const localityName = extractName(locality);
+        
+        // Create or get locality
+        await prisma.locality.upsert({
+          where: {
+            name_districtId: {
+              name: localityName,
+              districtId: createdDistrict.id,
+            },
+          },
+          update: {},
+          create: {
+            name: localityName,
+            districtId: createdDistrict.id,
+            isActive: true,
+          },
+        });
+        localityCount++;
+      }
+
+      if (localityCount > 0) {
+        console.log(`    ✅ District: ${createdDistrict.name} (${localityCount} localities)`);
+      }
+    }
+  }
+
+  console.log('\n🎉 Ghana location seeding completed successfully!');
+}
+
+/**
+ * Generate a simple code from name
+ */
+function generateCode(name: string): string {
+  return name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '_')
+    .substring(0, 50);
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error('❌ Seeding failed:', e);
     process.exit(1);
   })
   .finally(async () => {

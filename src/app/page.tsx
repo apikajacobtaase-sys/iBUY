@@ -89,26 +89,33 @@ export default function HomePage() {
     }
   };
 
-   const loadProducts = async (pageNum: number, reset: boolean) => {
+    const loadProducts = async (pageNum: number, reset: boolean) => {
     try {
-      // ✅ FIX 1: Use the working /api/search endpoint instead of /api/products
-      // ✅ FIX 2: Use an absolute URL to be safe in all environments
+      // ✅ Ensure we have a valid URL
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ibuy-apikajacobtaase-sys.vercel.app";
+      
       const params = new URLSearchParams({
-        q: "", // Empty query for "all products"
+        q: "", 
         page: pageNum.toString(),
         limit: "12",
       });
 
-      const res = await fetch(`${baseUrl}/api/search?${params}`, {
-        cache: "no-store"
+      const url = `${baseUrl}/api/search?${params}`;
+      console.log(`🚀 Attempting to fetch: ${url}`);
+
+      const res = await fetch(url, {
+        cache: "no-store",
+        // ✅ Add headers if needed for CORS (though usually not for same-origin)
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
 
-      // ✅ FIX 3: SAFETY CHECK - If API returns HTML (404/500), don't crash
       if (!res.ok) {
-        console.error("API Error:", res.status);
-        setHasMore(false);
-        return;
+        // ✅ Log the actual status text to see if it's 404, 500, etc.
+        const errorText = await res.text();
+        console.error(`❌ API Error ${res.status}:`, errorText);
+        throw new Error(`HTTP error! status: ${res.status}`);
       }
 
       const data = await res.json();
@@ -131,7 +138,7 @@ export default function HomePage() {
       setHasMore(data.hasMore || false);
       setPage(pageNum);
     } catch (error) {
-      console.error("Failed to load products:", error);
+      console.error("💥 Failed to load products:", error);
       setHasMore(false);
     }
   };

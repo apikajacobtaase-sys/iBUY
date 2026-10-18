@@ -1,41 +1,55 @@
-// promote-admin.ts
+ // promote-admin.ts
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  // 👇 REPLACE with the email of the user you want to promote
-  const userEmail = "apikajacobtaase@gmail.com"; 
-  const newRole = "SUPER_ADMIN"; // or "ADMIN"
+const MY_EMAIL = "ibuysupportghana@gmail.com"; 
+const NEW_PASSWORD = "jacobibuy123"; 
 
-  console.log(`🔍 Searching for user: ${userEmail}...`);
-  
-  const user = await prisma.user.findUnique({ 
-    where: { email: userEmail } 
+async function main() {
+  console.log(`🔍 Checking for user: ${MY_EMAIL}...`);
+
+  let user = await prisma.user.findUnique({
+    where: { email: MY_EMAIL },
   });
+
+  const hashedPassword = await bcrypt.hash(NEW_PASSWORD, 10);
 
   if (!user) {
-    console.log("❌ User not found!");
-    return;
+    console.log("⚠️ User not found. Creating new Super Admin account...");
+    user = await prisma.user.create({
+      data: {
+        email: MY_EMAIL,
+        passwordHash: hashedPassword,
+        firstName: "Super",
+        lastName: "Admin",
+        role: "SUPER_ADMIN", // ✅ Set role immediately on creation
+        isActive: true,
+      },
+    });
+    console.log("✅ New Admin Account Created!");
+  } else {
+    console.log("✅ User found. Updating role and password...");
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { 
+        role: 'SUPER_ADMIN',
+        passwordHash: hashedPassword,
+      },
+    });
   }
 
-  console.log(`✅ Found user! Current role: ${user.role}`);
-
-  if (user.role === newRole) {
-    console.log("⚠️ User is already a " + newRole);
-    return;
-  }
-
-  // Update the role
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { role: newRole }
-  });
-
-  console.log(`🎉 SUCCESS! ${user.firstName} is now a ${newRole}.`);
-  console.log("Please log out and log back in for the session to update.");
+  console.log(`🚀 SUCCESS! Email: ${MY_EMAIL}`);
+  console.log(`🔑 Password: ${NEW_PASSWORD}`);
+  console.log("⚠️ Please log out and log back in on the live site.");
 }
 
 main()
-  .catch((e) => console.error("❌ Error:", e))
-  .finally(async () => await prisma.$disconnect());
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
