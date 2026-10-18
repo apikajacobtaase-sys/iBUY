@@ -13,25 +13,33 @@ export default async function ProductsPage({
   const pageNum = parseInt(page, 10) || 1;
   const limit = 20;
 
-  // ✅ BULLETPROOF ABSOLUTE URL
+  // ✅ BULLETPROOF ABSOLUTE URL FOR SERVER COMPONENTS
   const headersList = await headers();
   const host = headersList.get("host");
   const protocol = process.env.NODE_ENV === "development" ? "http" : "https";
   const baseUrl = `${protocol}://${host}`;
 
-  const res = await fetch(
-    `${baseUrl}/api/search?q=${query}&page=${pageNum}&limit=${limit}`,
-    { cache: "no-store" }
-  );
+  let products = [];
+  let total = 0;
+  let totalPages = 0;
 
-  if (!res.ok) {
-    throw new Error(`Failed to fetch products: ${res.status} ${res.statusText}`);
+  try {
+    const res = await fetch(
+      `${baseUrl}/api/search?q=${query}&page=${pageNum}&limit=${limit}`,
+      { cache: "no-store" }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+      products = data.products || [];
+      total = data.total || 0;
+      totalPages = Math.ceil(total / limit);
+    } else {
+      console.error("API Error:", res.status);
+    }
+  } catch (error) {
+    console.error("Fetch failed:", error);
   }
-
-  const data = await res.json();
-  const products = data.products || [];
-  const total = data.total || 0;
-  const totalPages = Math.ceil(total / limit);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
@@ -67,19 +75,6 @@ export default async function ProductsPage({
               Filters
             </button>
           </div>
-          
-          {/* Active Search Indicator */}
-          {query && (
-            <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-sm text-gray-600">
-              <span>Showing results for:</span>
-              <span className="px-2 py-1 bg-green-100 text-green-700 rounded-md font-medium">
-                "{query}"
-              </span>
-              <Link href="/products" className="text-green-600 hover:underline ml-2">
-                Clear search
-              </Link>
-            </div>
-          )}
         </div>
 
         {/* Results Count */}
@@ -117,18 +112,8 @@ export default async function ProductsPage({
               {query ? `No products found for "${query}"` : "No products available"}
             </h3>
             <p className="text-gray-500 max-w-md mx-auto mb-6">
-              {query 
-                ? "Try adjusting your search terms, checking for typos, or using more general keywords."
-                : "Check back soon as we are constantly adding new products to our marketplace."}
+              Check back soon as we are constantly adding new products to our marketplace.
             </p>
-            {query && (
-              <Link
-                href="/products"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
-              >
-                View All Products
-              </Link>
-            )}
           </div>
         )}
 
@@ -142,16 +127,12 @@ export default async function ProductsPage({
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                   : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
               }`}
-              aria-disabled={pageNum === 1}
             >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
+              <ChevronLeft className="w-4 h-4" /> Previous
             </Link>
-
             <span className="px-4 py-2 text-sm font-medium text-gray-700">
               Page {pageNum} of {totalPages}
             </span>
-
             <Link
               href={`/products?search=${encodeURIComponent(query)}&page=${Math.min(totalPages, pageNum + 1)}`}
               className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -159,10 +140,8 @@ export default async function ProductsPage({
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                   : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
               }`}
-              aria-disabled={pageNum === totalPages}
             >
-              Next
-              <ChevronRight className="w-4 h-4" />
+              Next <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
         )}
