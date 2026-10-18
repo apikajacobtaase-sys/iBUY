@@ -1,4 +1,4 @@
-// src/app/page.tsx
+ // src/app/page.tsx
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback, FormEvent } from "react";
@@ -11,26 +11,23 @@ import { useCartStore } from "@/store/cartStore";
 import { triggerFlyToCart, getElementRect } from "@/lib/cartAnimation";
 import QuantitySelector from "@/components/QuantitySelector";
 
- interface Product {
+interface Product {
   id: string;
-  name: string;
   title: string;
   slug: string;
   price: number;
-  originalPrice?: number | null;
-  discount?: number;
   imageUrl?: string | null;
-  sellerId?: string; // 👈 ADD THIS
+  sellerId?: string;
   sellerName?: string;
   stockQuantity: number;
   inStock: boolean;
-  categoryName?: string;
   bestVariantId?: string;
   bestOfferId?: string | null;
 }
 
 export default function HomePage() {
   const router = useRouter();
+  // ✅ Use store actions directly for cleaner code
   const { addItem, updateQuantity, removeItem, items } = useCartStore();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   
@@ -89,42 +86,18 @@ export default function HomePage() {
     }
   };
 
-    const loadProducts = async (pageNum: number, reset: boolean) => {
+  const loadProducts = async (pageNum: number, reset: boolean) => {
     try {
-      // ✅ Ensure we have a valid URL
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ibuy-apikajacobtaase-sys.vercel.app";
-      
-      const params = new URLSearchParams({
-        q: "", 
-        page: pageNum.toString(),
-        limit: "12",
-      });
+      // ✅ Use relative URL for both local and production
+      const url = `/api/search?q=&page=${pageNum}&limit=12`;
 
-      const url = `${baseUrl}/api/search?${params}`;
-      console.log(`🚀 Attempting to fetch: ${url}`);
+      const res = await fetch(url, { cache: "no-store" });
 
-      const res = await fetch(url, {
-        cache: "no-store",
-        // ✅ Add headers if needed for CORS (though usually not for same-origin)
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!res.ok) {
-        // ✅ Log the actual status text to see if it's 404, 500, etc.
-        const errorText = await res.text();
-        console.error(`❌ API Error ${res.status}:`, errorText);
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
 
       const data = await res.json();
       const newProducts = data.products || [];
       
-      if (reset && newProducts.length > 0) {
-        console.log("✅ FRONTEND RECEIVED PRODUCT:", newProducts[0]);
-      }
-
       if (reset) {
         setProducts(newProducts);
       } else {
@@ -157,11 +130,7 @@ export default function HomePage() {
       {/* STICKY HEADER */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200 px-3 py-3 shadow-sm">
         <div className="flex items-center gap-3">
-          <Link 
-            href="/cart" 
-            className="relative flex-shrink-0 p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-            aria-label="View Cart"
-          >
+          <Link href="/cart" className="relative flex-shrink-0 p-1.5 hover:bg-gray-100 rounded-full transition-colors">
             <ShoppingCart className="w-7 h-7 text-gray-800" strokeWidth={2} />
             {totalItems > 0 && (
               <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[20px] h-5 px-1 bg-red-500 text-white text-[10px] font-extrabold rounded-full border-2 border-white animate-pulse">
@@ -208,7 +177,9 @@ export default function HomePage() {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {products.map((product, index) => {
                 const isLast = index === products.length - 1;
-                const cartItem = items.find((i) => i.productId === product.id && i.variantId === product.id);
+                
+                // ✅ FIX: Match cart items by offerId for accuracy
+                const cartItem = items.find((i) => i.offerId === product.bestOfferId);
                 const cartQuantity = cartItem?.quantity || 0;
 
                 return (
@@ -220,7 +191,6 @@ export default function HomePage() {
                     <button
                       onClick={(e) => {
                         e.preventDefault();
-                        e.stopPropagation();
                         router.push("/login?callbackUrl=/account/wishlist");
                       }}
                       className="absolute top-2 right-2 p-1.5 bg-white rounded-full shadow-sm hover:shadow-md transition z-10"
@@ -244,12 +214,6 @@ export default function HomePage() {
                             <ShoppingCart className="w-8 h-8 text-gray-400" />
                           </div>
                         )}
-                        
-                        {product.discount && product.discount > 0 && (
-                          <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-500 text-white text-xs font-semibold rounded">
-                            -{product.discount}%
-                          </span>
-                        )}
                       </div>
 
                       <h3 className="text-xs text-gray-900 line-clamp-2 mb-1 flex-1 min-h-[2.5rem]">
@@ -258,9 +222,6 @@ export default function HomePage() {
 
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-sm font-bold text-gray-900">{formatCurrency(product.price)}</span>
-                        {product.originalPrice && product.originalPrice > product.price && (
-                          <span className="text-xs text-gray-400 line-through">{formatCurrency(product.originalPrice)}</span>
-                        )}
                       </div>
                     </Link>
 
@@ -283,8 +244,7 @@ export default function HomePage() {
                       <button
                         onClick={(e) => {
                           e.preventDefault();
-                          e.stopPropagation();
-                          if (product.inStock) {
+                          if (product.inStock && product.bestOfferId) {
                             const imgElement = e.currentTarget.closest('.product-card')?.querySelector('img');
                             const rect = getElementRect(imgElement as HTMLElement);
                             triggerFlyToCart({
@@ -295,9 +255,8 @@ export default function HomePage() {
                             });
                             addItem({
                               productId: product.id,
-                            
-                              variantId: product.bestVariantId || product.id, // 👈 USE BEST VARIANT
-                              offerId: product.bestOfferId ,         // 👈 USE BEST OFFER
+                              variantId: product.bestVariantId || product.id,
+                              offerId: product.bestOfferId, // ✅ PRIMARY KEY FOR STOCK
                               title: product.title,
                               price: product.price,
                               imageUrl: product.imageUrl,
@@ -324,37 +283,12 @@ export default function HomePage() {
               })}
             </div>
           )}
-
-          {loadingMore && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="bg-white rounded-lg p-3 animate-pulse">
-                  <div className="aspect-square bg-gray-200 rounded-lg mb-2" />
-                  <div className="h-3 bg-gray-200 rounded mb-2" />
-                  <div className="h-4 bg-gray-200 rounded w-2/3" />
-                </div>
-              ))}
-            </div>
-          )}
-
+          
           {!hasMore && products.length > 0 && (
-            <div className="text-center py-6 text-gray-500 text-sm">
-              You've reached the end
-            </div>
+            <div className="text-center py-6 text-gray-500 text-sm">You've reached the end</div>
           )}
         </section>
       </main>
-
-      {showScrollTop && (
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="fixed bottom-24 right-4 z-40 p-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 transition hover:scale-110"
-          aria-label="Scroll to top"
-        >
-          <ArrowUp className="w-5 h-5" />
-        </button>
-      )}
-
       <BottomNav />
     </div>
   );

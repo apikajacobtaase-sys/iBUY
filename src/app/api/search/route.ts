@@ -1,22 +1,6 @@
-// src/app/api/search/route.ts
+ // src/app/api/search/route.ts
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-
- const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "sk-dummy-key-for-build",
-});
-
-async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: text.replace(/\n/g, " ").substring(0, 8000),
-    encoding_format: "float",
-  });
-  return response.data[0].embedding;
-}
-
-
 
 export async function GET(request: Request) {
   try {
@@ -26,11 +10,11 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const skip = (page - 1) * limit;
 
-    // ✅ CORRECTED PRISMA QUERY MATCHING YOUR SCHEMA
+    // 1. Fetch Products with Variants and their Seller Offers
     const [products, total] = await Promise.all([
       db.product.findMany({
         where: {
-          status: "ACTIVE", // Ensure we only show active products
+          status: "ACTIVE",
           OR: [
             { title: { contains: query, mode: 'insensitive' } },
             { description: { contains: query, mode: 'insensitive' } },
@@ -39,26 +23,17 @@ export async function GET(request: Request) {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        
-        // 👇 INCLUDE THE RELATIONSHIPS DEFINED IN YOUR SCHEMA
         include: {
-          images: {
-            where: { isPrimary: true },
-            take: 1,
-          },
-          seller: {
-            select: {
-              businessName: true
-            },
-          },
+          images: { where: { isPrimary: true }, take: 1 },
+          seller: { select: { businessName: true, id: true } },
           variants: {
             where: { isActive: true },
-            take: 1, // Get the first active variant
             include: {
               sellerOffers: {
-                where: { status: "ACTIVE" },
+                where: { status: "ACTIVE", stockQuantity: { gt: 0 } },
+                include: { seller: { select: { businessName: true, id: true } } },
                 orderBy: { price: 'asc' },
-                take: 1, // Get the cheapest active offer
+                take: 1 // Get the cheapest active offer for this variant
               },
             },
           },
@@ -75,41 +50,42 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    // Inside src/app/api/search/route.ts
+    // 2. Map the data to find the absolute best offer across all variants
+    const formattedProducts = products.map((product) => {
+      let bestOffer: any = null;
+      let bestVariantId: string | null = null;
 
-        // Inside src/app/api/search/route.ts
+      // Loop through variants to find the cheapest offer with stock
+      for (const variant of product.variants) {
+        if (variant.sellerOffers && variant.sellerOffers.length > 0) {
+          const offer = variant.sellerOffers[0]; // Already sorted by price asc
+          if (!bestOffer || parseFloat(offer.price.toString()) < parseFloat(bestOffer.price.toString())) {
+            bestOffer = offer;
+            bestVariantId = variant.id;
+          }
+        }
+      }
 
-const formattedProducts = products.map((product) => {
-  // ✅ FIX: Safely find the best active offer
-  const bestOffer = product.offers?.find((o: any) => o.isActive && o.stockQuantity > 0);
-  
-  // ✅ FIX: Safely find the first variant
-  const bestVariant = product.variants?.[0];
+      return {
+        id: product.id,
+        title: product.title,
+        slug: product.slug,
+        
+        // ✅ Use Offer data exclusively
+        price: bestOffer ? parseFloat(bestOffer.price.toString()) : 0,
+        stockQuantity: bestOffer ? bestOffer.stockQuantity : 0,
+        
+        // ✅ CRITICAL: Pass IDs to frontend
+        bestOfferId: bestOffer?.id || null,
+        bestVariantId: bestVariantId, // Keep for schema relations, but logic uses offerId
+        
+        imageUrl: product.images[0]?.url || null,
+        sellerName: bestOffer ? bestOffer.seller.businessName : (product.seller?.businessName || "iBUY Marketplace"),
+        sellerId: bestOffer ? bestOffer.seller.id : product.sellerId,
+        inStock: !!bestOffer,
+      };
+    });
 
-  return {
-    id: product.id,
-    title: product.title,
-    slug: product.slug,
-    
-    // ✅ FIX: Use Offer data if it exists, otherwise fall back to Variant
-    price: bestOffer 
-      ? parseFloat(bestOffer.price.toString()) 
-      : (bestVariant ? parseFloat(bestVariant.price.toString()) : 0),
-      
-    stockQuantity: bestOffer 
-      ? bestOffer.stockQuantity 
-      : (bestVariant ? bestVariant.stockQuantity : 0),
-      
-    // ✅ CRITICAL: Pass these IDs so the cart knows which one to use
-    bestOfferId: bestOffer?.id || null,
-    bestVariantId: bestVariant?.id || null,
-    
-    imageUrl: product.images?.[0]?.url || null,
-    sellerName: bestOffer ? bestOffer.seller?.businessName : "iBUY Marketplace",
-    sellerId: bestOffer ? bestOffer.sellerId : product.sellerId,
-    inStock: (bestOffer ? bestOffer.stockQuantity : (bestVariant?.stockQuantity || 0)) > 0,
-  };
-});
     return NextResponse.json({ 
       products: formattedProducts, 
       total,
