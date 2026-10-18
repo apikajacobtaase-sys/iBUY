@@ -11,7 +11,7 @@ import { useCartStore } from "@/store/cartStore";
 import { triggerFlyToCart, getElementRect } from "@/lib/cartAnimation";
 import QuantitySelector from "@/components/QuantitySelector";
 
-interface Product {
+ interface Product {
   id: string;
   name: string;
   title: string;
@@ -20,11 +20,13 @@ interface Product {
   originalPrice?: number | null;
   discount?: number;
   imageUrl?: string | null;
-  sellerId?: string;
+  sellerId?: string; // 👈 ADD THIS
   sellerName?: string;
   stockQuantity: number;
   inStock: boolean;
   categoryName?: string;
+  bestVariantId?: string;
+  bestOfferId?: string | null;
 }
 
 export default function HomePage() {
@@ -133,7 +135,7 @@ export default function HomePage() {
       setHasMore(false);
     }
   };
-  
+
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {

@@ -17,9 +17,6 @@ async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 
-// src/app/api/search/route.ts
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
 
 export async function GET(request: Request) {
   try {
@@ -29,56 +26,73 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const skip = (page - 1) * limit;
 
-    // Example Prisma query (adjust to match your actual schema)
+    // ✅ CORRECTED PRISMA QUERY MATCHING YOUR SCHEMA
     const [products, total] = await Promise.all([
       db.product.findMany({
         where: {
+          status: "ACTIVE", // Ensure we only show active products
           OR: [
             { title: { contains: query, mode: 'insensitive' } },
             { description: { contains: query, mode: 'insensitive' } },
           ],
-          isActive: true,
         },
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        
+        // 👇 INCLUDE THE RELATIONSHIPS DEFINED IN YOUR SCHEMA
         include: {
+          images: {
+            where: { isPrimary: true },
+            take: 1,
+          },
+          seller: {
+            select: {
+              storeName: true,
+            },
+          },
           variants: {
+            where: { isActive: true },
+            take: 1, // Get the first active variant
             include: {
-              offers: {
-                where: { isActive: true },
+              sellerOffers: {
+                where: { status: "ACTIVE" },
                 orderBy: { price: 'asc' },
-                take: 1,
+                take: 1, // Get the cheapest active offer
               },
             },
           },
-          seller: { select: { storeName: true } },
         },
       }),
       db.product.count({
         where: {
+          status: "ACTIVE",
           OR: [
             { title: { contains: query, mode: 'insensitive' } },
             { description: { contains: query, mode: 'insensitive' } },
           ],
-          isActive: true,
         },
       }),
     ]);
 
-    // Format products for the frontend
+    // ✅ FORMAT DATA FOR FRONTEND
     const formattedProducts = products.map((product) => {
       const bestVariant = product.variants[0];
-      const bestOffer = bestVariant?.offers[0];
+      const bestOffer = bestVariant?.sellerOffers[0];
+
       return {
         id: product.id,
         title: product.title,
         slug: product.slug,
-        price: bestOffer ? parseFloat(bestOffer.price.toString()) : 0,
-        compareAtPrice: bestVariant ? parseFloat(bestVariant.basePrice.toString()) : 0,
+        // Use Offer price if available, otherwise Variant base price
+        price: bestOffer ? parseFloat(bestOffer.price.toString()) : (bestVariant ? parseFloat(bestVariant.price.toString()) : 0),
+        compareAtPrice: bestVariant ? parseFloat(bestVariant.compareAtPrice?.toString() || "0") : 0,
         imageUrl: product.images[0]?.url || null,
-        sellerName: product.seller?.storeName || "Unknown Seller",
-        stockQuantity: bestVariant?.stockQuantity || 0,
+        sellerName: product.seller?.storeName || "iBUY Marketplace",
+        stockQuantity: bestOffer ? bestOffer.stockQuantity : (bestVariant?.stockQuantity || 0),
+        bestVariantId: bestVariant?.id || null,
+        bestOfferId: bestOffer?.id || null,
+        sellerId: product.sellerId || "unknown",
       };
     });
 
@@ -86,12 +100,11 @@ export async function GET(request: Request) {
       products: formattedProducts, 
       total,
       page,
-      totalPages: Math.ceil(total / limit)
+      hasMore: total > skip + limit
     });
 
   } catch (error) {
     console.error("Search API Error:", error);
-    // ✅ CRITICAL: Always return JSON, even on error
     return NextResponse.json(
       { error: "Failed to fetch products", details: String(error) },
       { status: 500 }
