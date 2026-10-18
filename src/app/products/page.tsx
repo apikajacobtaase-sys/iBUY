@@ -1,36 +1,38 @@
-// src/app/products/page.tsx
+ // src/app/products/page.tsx
 import ProductCard from "@/components/ProductCard";
 import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, Package } from "lucide-react";
 import Link from "next/link";
-// src/app/products/page.tsx
-import { headers } from "next/headers"; // Make sure this is imported
+import { headers } from "next/headers";
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ search?: string; page?: string }> }) {
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; page?: string }>;
+}) {
   const { search: query = "", page = "1" } = await searchParams;
-  
-  // ✅ THE ONLY WAY TO GET AN ABSOLUTE URL IN A SERVER COMPONENT
+  const pageNum = parseInt(page, 10) || 1;
+  const limit = 20;
+
+  // ✅ BULLETPROOF ABSOLUTE URL
   const headersList = await headers();
   const host = headersList.get("host");
   const protocol = process.env.NODE_ENV === "development" ? "http" : "https";
-  const baseUrl = `${protocol}://${host}`; 
+  const baseUrl = `${protocol}://${host}`;
 
-  const res = await fetch(`${baseUrl}/api/search?q=${query}&page=${page}&limit=20`, { 
-    cache: "no-store" 
-  });
+  const res = await fetch(
+    `${baseUrl}/api/search?q=${query}&page=${pageNum}&limit=${limit}`,
+    { cache: "no-store" }
+  );
 
-  // ✅ ADD THIS SAFETY CHECK
   if (!res.ok) {
     throw new Error(`Failed to fetch products: ${res.status} ${res.statusText}`);
   }
 
   const data = await res.json();
-  // ... rest of your code
-}
   const products = data.products || [];
-
+  const total = data.total || 0;
   const totalPages = Math.ceil(total / limit);
 
-  // ... (keep the rest of your return JSX exactly as it is)
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
       {/* Breadcrumbs */}
