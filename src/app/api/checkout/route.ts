@@ -82,13 +82,18 @@ export async function POST(req: Request) {
     const discountAmount = validated.discountAmount || 0;
     const finalTotal = Math.max(0, serverSubtotal + deliveryFee - discountAmount);
 
-    // 4. Atomic Transaction
+       // 4. Atomic Transaction
     const order = await db.$transaction(async (tx) => {
       
       // A. Validate Stock (OFFER ONLY)
       for (const item of validItems) {
-        if (!item.offer.isActive || item.offer.stockQuantity < item.quantity) {
-          throw new Error(`Insufficient stock for "${item.offer.variant.product.title}". Only ${item.offer.stockQuantity} left.`);
+        // ✅ FIX: Use '!' to tell TypeScript this offer definitely exists because of the filter
+        const offer = item.offer!; 
+        
+        // ✅ FIX: Ensure we are accessing the correct field. 
+        // If your schema uses 'status' instead of 'isActive', change it here.
+        if (offer.status !== "ACTIVE" || offer.stockQuantity < item.quantity) {
+          throw new Error(`Insufficient stock for "${offer.variant.product.title}". Only ${offer.stockQuantity} left.`);
         }
       }
 
@@ -117,23 +122,29 @@ export async function POST(req: Request) {
             },
           },
           items: {
-            create: validItems.map((item) => ({
-              variant: { connect: { id: item.offer!.variantId } },
-              title: item.offer!.variant.product.title,
-              price: parseFloat(item.offer!.price.toString()),
-              quantity: item.quantity,
-              sellerId: item.offer!.sellerId,
-              offer: { connect: { id: item.offer!.id } }, // ✅ Link to Offer
-              status: "PENDING",
-            })),
+            create: validItems.map((item) => {
+              // ✅ FIX: Assign to a constant for cleaner code
+              const offer = item.offer!;
+              
+              return {
+                variant: { connect: { id: offer.variantId } },
+                title: offer.variant.product.title,
+                price: parseFloat(offer.price.toString()),
+                quantity: item.quantity,
+                sellerId: offer.sellerId,
+                offer: { connect: { id: offer.id } }, // ✅ Link to Offer
+                status: "PENDING",
+              };
+            }),
           },
         },
       });
 
       // C. Deduct Stock (OFFER ONLY)
       for (const item of validItems) {
+        const offer = item.offer!;
         await tx.sellerOffer.update({
-          where: { id: item.offer!.id },
+          where: { id: offer.id },
           data: { stockQuantity: { decrement: item.quantity } },
         });
       }

@@ -1048,7 +1048,7 @@ model SellerOffer {
 
   // Relations for checkout/cart
   cartItems       CartItem[]
- orderItems   OrderItem[] // To be added during checkout phase
+   orderItems   OrderItem[] // To be added during checkout phase
 
   @@unique([sellerId, variantId]) // CRITICAL: Prevents a seller from creating duplicate offers for the same variant
   @@index([sellerId])
