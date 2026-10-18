@@ -146,20 +146,37 @@ export async function POST(req: Request) {
               currency: "GHS",
             },
           },
-           items: {
-            create: cartItems.map((item) => {
-              const isOffer = !!item.offer;
-              return {
-                variant: { connect: { id: item.variantId } }, // 👈 Use connect
-                title: isOffer ? item.offer!.variant.product.title : item.variant.product.title,
-                price: isOffer ? parseFloat(item.offer!.price.toString()) : parseFloat(item.variant.price.toString()),
-                quantity: item.quantity,
-                seller: item.variant.product.sellerId ? { connect: { id: item.variant.product.sellerId } } : undefined,
-                offer: isOffer ? { connect: { id: item.offer!.id } } : undefined,
-                status: "PENDING",
-              };
-            }),
-          },
+        items: {
+               create: cartItems.map((item) => {
+          const isOffer = !!item.offer;
+          
+          // ✅ SAFELY GET SELLER ID
+          // If it's an offer, get seller from offer. If it's a variant, get it from the product.
+          const sellerId = isOffer 
+            ? item.offer?.sellerId 
+            : item.variant?.product?.sellerId;
+
+          return {
+            variant: { connect: { id: item.variantId } },
+            title: isOffer 
+              ? item.offer!.variant.product.title 
+              : item.variant!.product.title,
+            price: isOffer 
+              ? parseFloat(item.offer!.price.toString()) 
+              : parseFloat(item.variant!.price.toString()),
+            quantity: item.quantity,
+            
+            // ✅ ADD THIS LINE: Explicitly set the sellerId
+            sellerId: sellerId || "unknown", 
+            
+            // You can keep the relation connect if you want, but sellerId is the critical fix
+            seller: sellerId ? { connect: { id: sellerId } } : undefined,
+            
+            offer: isOffer ? { connect: { id: item.offer!.id } } : undefined,
+            status: "PENDING",
+          };
+        }),
+      },
         },
       });
 
