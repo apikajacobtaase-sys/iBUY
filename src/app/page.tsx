@@ -27,7 +27,6 @@ interface Product {
 
 export default function HomePage() {
   const router = useRouter();
-  // ✅ Use store actions directly for cleaner code
   const { addItem, updateQuantity, removeItem, items } = useCartStore();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   
@@ -88,9 +87,7 @@ export default function HomePage() {
 
   const loadProducts = async (pageNum: number, reset: boolean) => {
     try {
-      // ✅ Use relative URL for both local and production
       const url = `/api/search?q=&page=${pageNum}&limit=12`;
-
       const res = await fetch(url, { cache: "no-store" });
 
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -244,6 +241,7 @@ export default function HomePage() {
                       <button
                         onClick={(e) => {
                           e.preventDefault();
+                          // ✅ FIX: Properly wrapped addItem logic
                           if (product.inStock && product.bestOfferId) {
                             const imgElement = e.currentTarget.closest('.product-card')?.querySelector('img');
                             const rect = getElementRect(imgElement as HTMLElement);
@@ -253,19 +251,19 @@ export default function HomePage() {
                               startY: rect.y,
                               id: Date.now().toString(),
                             });
-                            // In src/app/page.tsx inside the onClick handler
-addItem({
-  productId: product.id,
-  variantId: product.bestVariantId || product.id, // Keep for schema, but ignore for logic
-  offerId: product.bestOfferId, // ✅ THIS MUST BE PRESENT
-  title: product.title,
-  price: product.price,
-  imageUrl: product.imageUrl,
-  stockQuantity: product.stockQuantity,
-  sellerId: product.sellerId,
-  sellerName: product.sellerName,
-  quantity: 1,
-});
+                            
+                            addItem({
+                              productId: product.id,
+                              variantId: product.bestVariantId || product.id,
+                              offerId: product.bestOfferId, // ✅ CRITICAL: Pass the Offer ID
+                              title: product.title,
+                              price: product.price,
+                              imageUrl: product.imageUrl,
+                              stockQuantity: product.stockQuantity,
+                              sellerId: product.sellerId || "unknown",
+                              sellerName: product.sellerName || "iBUY Marketplace",
+                              quantity: 1,
+                            });
                           }
                         }}
                         disabled={!product.inStock}
