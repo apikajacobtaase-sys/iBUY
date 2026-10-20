@@ -23,21 +23,28 @@ export async function GET(request: Request) {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
-          images: { where: { isPrimary: true }, take: 1 },
-          seller: { select: { businessName: true, id: true } },
-          variants: {
-            where: { isActive: true },
-            include: {
-              sellerOffers: {
-                where: { status: "ACTIVE", stockQuantity: { gt: 0 } },
-                include: { seller: { select: { businessName: true, id: true } } },
-                orderBy: { price: 'asc' },
-                take: 1 // Get the cheapest active offer for this variant
-              },
-            },
-          },
+        // src/app/api/search/route.ts
+
+include: {
+  images: { where: { isPrimary: true }, take: 1 },
+  seller: { select: { businessName: true, id: true } },
+  variants: {
+    where: { isActive: true },
+    include: {
+      sellerOffers: {
+        where: { 
+          status: "ACTIVE", 
+          stockQuantity: { gt: 0 } 
         },
+        include: { 
+          seller: { select: { businessName: true, id: true } } 
+        },
+        orderBy: { price: 'asc' },
+        take: 1
+      },
+    },
+  },
+},
       }),
       db.product.count({
         where: {
