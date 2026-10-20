@@ -251,19 +251,19 @@ export default function HomePage() {
                               startY: rect.y,
                               id: Date.now().toString(),
                             });
-                            
-                            addItem({
-                              productId: product.id,
-                              variantId: product.bestVariantId || product.id,
-                              offerId: product.bestOfferId, // ✅ CRITICAL: Pass the Offer ID
-                              title: product.title,
-                              price: product.price,
-                              imageUrl: product.imageUrl,
-                              stockQuantity: product.stockQuantity,
-                              sellerId: product.sellerId || "unknown",
-                              sellerName: product.sellerName || "iBUY Marketplace",
-                              quantity: 1,
-                            });
+                           // Inside the onClick handler
+addItem({
+  productId: product.id,
+  variantId: product.bestVariantId || product.id,
+  offerId: product.bestOfferId, // ✅ MUST BE PRESENT
+  title: product.title,
+  price: product.price,
+  imageUrl: product.imageUrl,
+  stockQuantity: product.stockQuantity,
+  sellerId: product.sellerId,
+  sellerName: product.sellerName,
+  quantity: 1,
+});
                           }
                         }}
                         disabled={!product.inStock}

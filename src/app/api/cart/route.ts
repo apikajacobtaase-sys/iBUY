@@ -94,70 +94,48 @@ export async function GET() {
   }
 }
    
-
+// src/app/api/cart/route.ts (Inside POST handler)
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // ... session check ...
 
     const body = await req.json();
-    console.log("🔍 Cart API Received:", body); // Debug log
+    const { variantId, offerId, quantity } = body;
 
-    const { variantId, offerId, quantity = 1, isSelected = true } = body;
+    if (!variantId) return NextResponse.json({ error: "Variant ID is required" }, { status: 400 });
+    
+    // ✅ FIX: Validate that an Offer ID is provided for multi-vendor support
+    if (!offerId) return NextResponse.json({ error: "Offer ID is required" }, { status: 400 });
 
-    // ✅ VALIDATION: Ensure we have at least a variantId
-    if (!variantId) {
-      return NextResponse.json({ error: "Variant ID is required" }, { status: 400 });
-    }
-
-    // Find or Create Cart for the user
-    let cart = await db.cart.findUnique({
-      where: { userId: session.user.id },
+    // Verify the offer exists and is active
+    const offer = await db.sellerOffer.findUnique({
+      where: { id: offerId },
     });
 
-    if (!cart) {
-      cart = await db.cart.create({
-        data: { userId: session.user.id },
-      });
+    if (!offer || !offer.isActive) {
+      return NextResponse.json({ error: "Invalid or inactive offer" }, { status: 400 });
     }
 
-    // Check if item already exists in cart
-    const existingItem = await db.cartItem.findFirst({
+    // ... upsert logic ...
+    const cartItem = await db.cartItem.upsert({
       where: {
+        cartId_variantId_offerId: { // Ensure you have this unique constraint in schema
+          cartId: cart.id,
+          variantId: variantId,
+          offerId: offerId,
+        }
+      },
+      update: { quantity: { increment: quantity } },
+      create: {
         cartId: cart.id,
         variantId: variantId,
-        offerId: offerId || null, // Handle null vs undefined
+        offerId: offerId, // ✅ CRITICAL: Save the offerId
+        quantity: quantity,
       },
     });
 
-    let cartItem;
-
-    if (existingItem) {
-      // Update quantity if it exists
-      cartItem = await db.cartItem.update({
-        where: { id: existingItem.id },
-        data: { 
-          quantity: { increment: quantity },
-          isSelected: isSelected 
-        },
-      });
-    } else {
-      // Create new item
-      cartItem = await db.cartItem.create({
-        data: {
-          cartId: cart.id,
-          variantId: variantId,
-          offerId: offerId || null,
-          quantity: quantity,
-          isSelected: isSelected,
-        },
-      });
-    }
-
-    return NextResponse.json({ cartItem }, { status: 200 });
-
+    return NextResponse.json({ success: true, item: cartItem });
   } catch (error) {
     console.error("Cart API Error:", error);
     return NextResponse.json({ error: "Failed to update cart" }, { status: 500 });
