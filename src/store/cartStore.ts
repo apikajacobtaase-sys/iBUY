@@ -46,27 +46,25 @@ export const useCartStore = create<CartState>()(
       totalItems: () => get().items.reduce((sum, item) => sum + item.quantity, 0),
 
       addItem: async (newItem) => {
-        // ✅ SAFETY CHECK: Ensure stockQuantity exists
         const availableStock = newItem.stockQuantity ?? 0;
         if (availableStock === 0) {
           alert("This item is out of stock.");
           return;
         }
 
+        // 1. Optimistic Update (Use a temporary ID for UI only)
+        const tempId = crypto.randomUUID();
         set((state) => {
           const existing = state.items.find(
             (i) => i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
           );
 
           if (existing) {
-            // ✅ HARD CAP: Do not allow adding more than available stock
             const newQuantity = Math.min(existing.quantity + (newItem.quantity || 1), availableStock);
-            
             if (newQuantity <= existing.quantity) {
               alert(`Sorry, only ${availableStock} items are available.`);
-              return state; // Prevent update
+              return state;
             }
-
             return {
               items: state.items.map((i) =>
                 i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
@@ -81,49 +79,50 @@ export const useCartStore = create<CartState>()(
               ...state.items, 
               { 
                 ...newItem, 
-                id: crypto.randomUUID(), 
+                id: tempId, // Temporary ID
                 quantity: Math.min(newItem.quantity || 1, availableStock), 
                 isSelected: true,
-                stockQuantity: availableStock // Ensure this is saved
+                stockQuantity: availableStock
               } 
             ] 
           };
         });
 
-        // Sync to DB
-        const state = get();
-        const addedItem = state.items.find(
-          i => i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
-        );
-        
-        if (addedItem?.variantId) {
-          try {
-             // Inside addItem in cartStore.ts
-// Inside addItem
-const res = await fetch("/api/cart", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ 
-    variantId: addedItem.variantId, 
-    offerId: addedItem.offerId, // ✅ SEND IT
-    quantity: addedItem.quantity 
-  }),
-});
-            const data = await res.json();
-            const realItem = data.cartItem || data.item || data;
-            
-            if (realItem && realItem.id && !realItem.id.includes("-")) {
-              set((state) => ({
-                items: state.items.map((i) => 
-                  i.productId === addedItem.productId && i.variantId === addedItem.variantId && i.offerId === addedItem.offerId
-                    ? { ...i, id: realItem.id }
-                    : i
-                )
-              }));
-            }
-          } catch (error) {
-            console.error("Failed to sync cart add to DB:", error);
+        // 2. Sync to DB
+        try {
+          const res = await fetch("/api/cart", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              variantId: newItem.variantId, 
+              offerId: newItem.offerId, 
+              quantity: Math.min(newItem.quantity || 1, availableStock)
+            }),
+          });
+
+          if (!res.ok) {
+            const errorData = await res.json();
+            console.error("Cart API Error:", errorData);
+            alert(errorData.error || "Failed to add to cart");
+            // Remove the temporary item on failure
+            set((state) => ({ items: state.items.filter(i => i.id !== tempId) }));
+            return;
           }
+
+          const data = await res.json();
+          // ✅ FIX: Correctly extract the real ID from the response
+          const realId = data.item?.id || data.cartItem?.id || data.id;
+
+          if (realId) {
+            set((state) => ({
+              items: state.items.map((i) => 
+                i.id === tempId ? { ...i, id: realId } : i
+              )
+            }));
+            console.log("✅ Cart synced with DB ID:", realId);
+          }
+        } catch (error) {
+          console.error("Failed to sync cart add to DB:", error);
         }
       },
 
@@ -155,13 +154,8 @@ const res = await fetch("/api/cart", {
           return;
         }
 
-        // ✅ HARD CAP: Do not allow updating to more than available stock
         const maxStock = item.stockQuantity ?? 999;
         const cappedQuantity = Math.min(quantity, maxStock);
-
-        if (cappedQuantity < quantity) {
-           alert(`Sorry, only ${maxStock} items are available.`);
-        }
 
         set((state) => ({
           items: state.items.map((i) =>
