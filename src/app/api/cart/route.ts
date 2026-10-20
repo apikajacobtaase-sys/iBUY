@@ -94,51 +94,67 @@ export async function GET() {
   }
 }
    
- // src/app/api/cart/route.ts (Inside POST handler)
+// src/app/api/cart/route.ts (POST Handler)
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    // ... session check ...
+    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
     const { variantId, offerId, quantity } = body;
 
-    if (!variantId) return NextResponse.json({ error: "Variant ID is required" }, { status: 400 });
-    
-    // ✅ FIX: Validate that an Offer ID is provided for multi-vendor support
-    if (!offerId) return NextResponse.json({ error: "Offer ID is required" }, { status: 400 });
+    console.log("📥 Cart API Received:", { variantId, offerId, quantity });
 
-    // Verify the offer exists and is active
-    const offer = await db.sellerOffer.findUnique({
-      where: { id: offerId },
-    });
-
-    if (!offer || !offer.isActive) {
-      return NextResponse.json({ error: "Invalid or inactive offer" }, { status: 400 });
+    if (!variantId || !offerId) {
+      return NextResponse.json({ error: "Variant ID and Offer ID are required" }, { status: 400 });
     }
 
-    // ... upsert logic ...
-    const cartItem = await db.cartItem.upsert({
-      where: {
-        cartId_variantId_offerId: { // Ensure you have this unique constraint in schema
-          cartId: cart.id,
-          variantId: variantId,
-          offerId: offerId,
-        }
-      },
-      update: { quantity: { increment: quantity } },
-      create: {
+    // ✅ DIAGNOSTIC: Check the offer exactly as it is in the DB
+    const offer = await db.sellerOffer.findUnique({ 
+      where: { id: offerId },
+      select: { id: true, status: true, stockQuantity: true, price: true }
+    });
+
+    console.log("🔍 Database Check for Offer:", offer);
+
+    if (!offer) {
+      return NextResponse.json({ error: "Offer not found in database", debug: offerId }, { status: 404 });
+    }
+
+    // ✅ CHECK: Ensure status is exactly "ACTIVE" (Case Sensitive)
+    if (offer.status !== "ACTIVE") {
+      return NextResponse.json({ 
+        error: "Invalid or inactive offer", 
+        debug: { receivedStatus: offer.status, expected: "ACTIVE" } 
+      }, { status: 400 });
+    }
+
+    if (offer.stockQuantity < (quantity || 1)) {
+      return NextResponse.json({ error: "Insufficient stock" }, { status: 400 });
+    }
+
+    // Get or Create Cart
+    let cart = await db.cart.findFirst({ where: { userId: session.user.id } });
+    if (!cart) {
+      cart = await db.cart.create({ data: { userId: session.user.id } });
+    }
+
+    // Create Cart Item
+    const cartItem = await db.cartItem.create({
+      data: {
         cartId: cart.id,
         variantId: variantId,
-        offerId: offerId, // ✅ CRITICAL: Save the offerId
-        quantity: quantity,
+        offerId: offerId,
+        quantity: quantity || 1,
       },
     });
 
+    console.log("✅ Cart Item Created:", cartItem.id);
     return NextResponse.json({ success: true, item: cartItem });
-  } catch (error) {
-    console.error("Cart API Error:", error);
-    return NextResponse.json({ error: "Failed to update cart" }, { status: 500 });
+
+  } catch (error: any) {
+    console.error("💥 Cart API Crash:", error);
+    return NextResponse.json({ error: "Failed to update cart", details: error.message }, { status: 500 });
   }
 }
 export async function PATCH(req: Request) {
