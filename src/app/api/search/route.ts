@@ -23,28 +23,26 @@ export async function GET(request: Request) {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        // src/app/api/search/route.ts
-
-include: {
-  images: { where: { isPrimary: true }, take: 1 },
-  seller: { select: { businessName: true, id: true } },
-  variants: {
-    where: { isActive: true },
-    include: {
-      sellerOffers: {
-        where: { 
-          status: "ACTIVE", 
-          stockQuantity: { gt: 0 } 
+        include: {
+          images: { where: { isPrimary: true }, take: 1 },
+          seller: { select: { businessName: true, id: true } },
+          variants: {
+            where: { isActive: true },
+            include: {
+              sellerOffers: {
+                where: { 
+                  status: "ACTIVE", 
+                  stockQuantity: { gt: 0 } 
+                },
+                include: { 
+                  seller: { select: { businessName: true, id: true } } 
+                },
+                orderBy: { price: 'asc' },
+                take: 1
+              },
+            },
+          },
         },
-        include: { 
-          seller: { select: { businessName: true, id: true } } 
-        },
-        orderBy: { price: 'asc' },
-        take: 1
-      },
-    },
-  },
-},
       }),
       db.product.count({
         where: {
@@ -57,16 +55,21 @@ include: {
       }),
     ]);
 
-   // Inside src/app/api/search/route.ts
+    // ✅ DEBUG: Log raw data to see if Prisma is finding offers
+    if (products.length > 0) {
+      console.log("🔍 RAW PRODUCT DATA:", {
+        title: products[0].title,
+        variantsCount: products[0].variants.length,
+        firstVariantOffers: products[0].variants[0]?.sellerOffers
+      });
+    }
 
     const formattedProducts = products.map((product) => {
       let bestOffer: any = null;
       let bestVariantId: string | null = null;
 
-      // ✅ SAFETY: Check if variants exist first
       if (product.variants && product.variants.length > 0) {
         for (const variant of product.variants) {
-          // ✅ SAFETY: Check if sellerOffers exist
           if (variant.sellerOffers && variant.sellerOffers.length > 0) {
             const offer = variant.sellerOffers[0];
             if (!bestOffer || parseFloat(offer.price.toString()) < parseFloat(bestOffer.price.toString())) {
@@ -85,18 +88,18 @@ include: {
         price: bestOffer ? parseFloat(bestOffer.price.toString()) : 0,
         stockQuantity: bestOffer ? bestOffer.stockQuantity : 0,
         
+        // ✅ CRITICAL: Ensure these are mapped correctly
         bestOfferId: bestOffer?.id || null,
         bestVariantId: bestVariantId,
         
-        // ✅ SAFETY: Ensure image URL is a string or null
         imageUrl: (product.images && product.images.length > 0) ? product.images[0].url : null,
         
-        // ✅ SAFETY: Use optional chaining for seller names
         sellerName: bestOffer?.seller?.businessName || product.seller?.businessName || "iBUY Marketplace",
         sellerId: bestOffer?.seller?.id || product.sellerId || "unknown",
         inStock: !!bestOffer,
       };
     });
+
     return NextResponse.json({ 
       products: formattedProducts, 
       total,
