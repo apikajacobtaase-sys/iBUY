@@ -246,51 +246,40 @@ const loadProducts = async (pageNum: number, reset: boolean) => {
                       />
                     ) : (
                       <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          
-                          // ✅ DEBUG: Check what the frontend actually sees
-                          console.log("🛒 DEBUG - Product Data:", {
-                            title: product.title,
-                            bestOfferId: product.bestOfferId,
-                            inStock: product.inStock
-                          });
+                       // Inside the onClick handler in src/app/page.tsx
+onClick={(e) => {
+  e.preventDefault();
+  
+  // ✅ DEBUG: Check the exact values being passed
+  console.log("🛒 Homepage Click Data:", {
+    id: product.id,
+    bestVariantId: product.bestVariantId,
+    bestOfferId: product.bestOfferId,
+    inStock: product.inStock
+  });
 
-                          if (!product.bestOfferId) {
-                            alert("Error: This product has no active seller offer.");
-                            return;
-                          }
+  if (!product.bestOfferId || !product.bestVariantId) {
+    alert("Error: This product is missing seller information. Try refreshing.");
+    return;
+  }
 
-                          if (product.inStock) {
-                            const imgElement = e.currentTarget.closest('.product-card')?.querySelector('img');
-                            const rect = getElementRect(imgElement as HTMLElement);
-                            triggerFlyToCart({
-                              imageUrl: product.imageUrl || '',
-                              startX: rect.x,
-                              startY: rect.y,
-                              id: Date.now().toString(),
-                            });
-                            
-                            addItem({
-                              productId: product.id,
-                              variantId: product.bestVariantId || product.id,
-                              offerId: product.bestOfferId, // ✅ MUST BE PRESENT
-                              title: product.title,
-                              price: product.price,
-                              imageUrl: product.imageUrl,
-                              stockQuantity: product.stockQuantity,
-                              sellerId: product.sellerId || "unknown",
-                              sellerName: product.sellerName || "iBUY Marketplace",
-                              quantity: 1,
-                            });
-                          }
-                        }}
-                        disabled={!product.inStock}
-                        className={`w-full py-2 text-xs font-semibold rounded-lg transition mt-auto flex items-center justify-center gap-2 ${
-                          product.inStock 
-                            ? "bg-green-600 hover:bg-green-700 text-white" 
-                            : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                        }`}
+  if (product.inStock) {
+    // ... (Fly to cart animation) ...
+    
+    addItem({
+      productId: product.id,
+      variantId: product.bestVariantId, // ✅ Ensure this matches the interface
+      offerId: product.bestOfferId,     // ✅ Ensure this matches the interface
+      title: product.title,
+      price: product.price,
+      imageUrl: product.imageUrl,
+      stockQuantity: product.stockQuantity,
+      sellerId: product.sellerId || "unknown",
+      sellerName: product.sellerName || "iBUY Marketplace",
+      quantity: 1,
+    });
+  }
+}}
                       >
                         <ShoppingCart className="w-4 h-4" />
                         {product.inStock ? "Add to Cart" : "Out of Stock"}

@@ -45,87 +45,104 @@ export const useCartStore = create<CartState>()(
       selectedTotalItems: () => get().selectedItems().reduce((sum, item) => sum + item.quantity, 0),
       totalItems: () => get().items.reduce((sum, item) => sum + item.quantity, 0),
 
-      addItem: async (newItem) => {
-        const availableStock = newItem.stockQuantity ?? 0;
-        if (availableStock === 0) {
-          alert("This item is out of stock.");
-          return;
-        }
+      // src/store/cartStore.ts
 
-        // 1. Optimistic Update (Use a temporary ID for UI only)
-        const tempId = crypto.randomUUID();
-        set((state) => {
-          const existing = state.items.find(
-            (i) => i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
-          );
+addItem: async (newItem) => {
+  const availableStock = newItem.stockQuantity ?? 0;
+  if (availableStock === 0) {
+    alert("This item is out of stock.");
+    return;
+  }
 
-          if (existing) {
-            const newQuantity = Math.min(existing.quantity + (newItem.quantity || 1), availableStock);
-            if (newQuantity <= existing.quantity) {
-              alert(`Sorry, only ${availableStock} items are available.`);
-              return state;
-            }
-            return {
-              items: state.items.map((i) =>
-                i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
-                  ? { ...i, quantity: newQuantity, isSelected: true }
-                  : i
-              ),
-            };
-          }
+  // ✅ FIX: Strict Validation before any processing
+  if (!newItem.variantId || !newItem.offerId) {
+    console.error("❌ CRITICAL: Missing IDs in addItem", {
+      variantId: newItem.variantId,
+      offerId: newItem.offerId,
+      fullItem: newItem
+    });
+    alert("Error: Product data is incomplete. Please refresh the page.");
+    return;
+  }
 
-          return { 
-            items: [
-              ...state.items, 
-              { 
-                ...newItem, 
-                id: tempId, // Temporary ID
-                quantity: Math.min(newItem.quantity || 1, availableStock), 
-                isSelected: true,
-                stockQuantity: availableStock
-              } 
-            ] 
-          };
-        });
+  // 1. Optimistic Update
+  const tempId = crypto.randomUUID();
+  set((state) => {
+    // ... (Your existing optimistic update logic) ...
+    const existing = state.items.find(
+      (i) => i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
+    );
 
-        // 2. Sync to DB
-        try {
-          const res = await fetch("/api/cart", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              variantId: newItem.variantId, 
-              offerId: newItem.offerId, 
-              quantity: Math.min(newItem.quantity || 1, availableStock)
-            }),
-          });
+    if (existing) {
+      const newQuantity = Math.min(existing.quantity + (newItem.quantity || 1), availableStock);
+      if (newQuantity <= existing.quantity) {
+        alert(`Sorry, only ${availableStock} items are available.`);
+        return state;
+      }
+      return {
+        items: state.items.map((i) =>
+          i.productId === newItem.productId && i.variantId === newItem.variantId && i.offerId === newItem.offerId
+            ? { ...i, quantity: newQuantity, isSelected: true }
+            : i
+        ),
+      };
+    }
 
-          if (!res.ok) {
-            const errorData = await res.json();
-            console.error("Cart API Error:", errorData);
-            alert(errorData.error || "Failed to add to cart");
-            // Remove the temporary item on failure
-            set((state) => ({ items: state.items.filter(i => i.id !== tempId) }));
-            return;
-          }
+    return { 
+      items: [
+        ...state.items, 
+        { 
+          ...newItem, 
+          id: tempId, 
+          quantity: Math.min(newItem.quantity || 1, availableStock), 
+          isSelected: true,
+          stockQuantity: availableStock
+        } 
+      ] 
+    };
+  });
 
-          const data = await res.json();
-          // ✅ FIX: Correctly extract the real ID from the response
-          const realId = data.item?.id || data.cartItem?.id || data.id;
+  // 2. Sync to DB
+  try {
+    console.log("📤 Sending to Cart API:", { 
+      variantId: newItem.variantId, 
+      offerId: newItem.offerId, 
+      quantity: Math.min(newItem.quantity || 1, availableStock)
+    });
 
-          if (realId) {
-            set((state) => ({
-              items: state.items.map((i) => 
-                i.id === tempId ? { ...i, id: realId } : i
-              )
-            }));
-            console.log("✅ Cart synced with DB ID:", realId);
-          }
-        } catch (error) {
-          console.error("Failed to sync cart add to DB:", error);
-        }
-      },
+    const res = await fetch("/api/cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        variantId: newItem.variantId, 
+        offerId: newItem.offerId, 
+        quantity: Math.min(newItem.quantity || 1, availableStock)
+      }),
+    });
 
+    if (!res.ok) {
+      const errorData = await res.json();
+      console.error("Cart API Error:", errorData);
+      alert(errorData.error || "Failed to add to cart");
+      set((state) => ({ items: state.items.filter(i => i.id !== tempId) }));
+      return;
+    }
+
+    const data = await res.json();
+    const realId = data.item?.id || data.cartItem?.id || data.id;
+
+    if (realId) {
+      set((state) => ({
+        items: state.items.map((i) => 
+          i.id === tempId ? { ...i, id: realId } : i
+        )
+      }));
+      console.log("✅ Cart synced with DB ID:", realId);
+    }
+  } catch (error) {
+    console.error("Failed to sync cart add to DB:", error);
+  }
+},
       removeItem: async (id) => {
         const item = get().items.find((i) => i.id === id);
         set((state) => ({
