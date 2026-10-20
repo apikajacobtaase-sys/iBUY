@@ -30,7 +30,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     const validated = checkoutSchema.parse(body);
 
-    // 1. Fetch cart items (Must include Offer)
+    console.log(`🛒 Checkout initiated by ${session.user.id} for items:`, validated.cartItemIds);
+
+    // 1. Fetch cart items
     const cartItems = await db.cartItem.findMany({
       where: {
         id: { in: validated.cartItemIds },
@@ -46,11 +48,33 @@ export async function POST(req: Request) {
       },
     });
 
-    // ✅ FILTER: Only keep items that have a valid Offer
-    const validItems = cartItems.filter(item => item.offer);
+    console.log(`🔍 Found ${cartItems.length} items in DB.`);
+
+    // ✅ FIX: Explicitly type validItems to match cartItems type
+    const validItems: typeof cartItems = [];
+    const invalidReasons: string[] = [];
+
+    for (const item of cartItems) {
+      if (!item.offerId) {
+        invalidReasons.push(`Item ${item.id}: Missing offerId in DB`);
+      } else if (!item.offer) {
+        invalidReasons.push(`Item ${item.id}: Offer ${item.offerId} not found in DB`);
+      } else if (item.offer.status !== "ACTIVE") {
+        invalidReasons.push(`Item ${item.id}: Offer is ${item.offer.status}`);
+      } else {
+        validItems.push(item);
+      }
+    }
+
+    if (invalidReasons.length > 0) {
+      console.warn("⚠️ Invalid Items Detected:", invalidReasons);
+    }
 
     if (validItems.length === 0) {
-      return NextResponse.json({ error: "No valid offers found in cart." }, { status: 400 });
+      return NextResponse.json({ 
+        error: "No valid offers found in cart.", 
+        debug: invalidReasons 
+      }, { status: 400 });
     }
 
     // 2. Validate Delivery Zone
@@ -72,27 +96,22 @@ export async function POST(req: Request) {
     const zone = zoneLocality.deliveryZone;
     const deliveryFee = parseFloat(zone.baseDeliveryFee.toString());
 
-    // 3. Calculate Server-Side Subtotal (OFFER ONLY)
+    // 3. Calculate Server-Side Subtotal
     let serverSubtotal = 0;
     for (const item of validItems) {
       serverSubtotal += parseFloat(item.offer!.price.toString()) * item.quantity;
     }
 
-    // Apply Discount
     const discountAmount = validated.discountAmount || 0;
     const finalTotal = Math.max(0, serverSubtotal + deliveryFee - discountAmount);
 
-       // 4. Atomic Transaction
+    // 4. Atomic Transaction
     const order = await db.$transaction(async (tx) => {
       
-      // A. Validate Stock (OFFER ONLY)
+      // A. Validate Stock
       for (const item of validItems) {
-        // ✅ FIX: Use '!' to tell TypeScript this offer definitely exists because of the filter
         const offer = item.offer!; 
-        
-        // ✅ FIX: Ensure we are accessing the correct field. 
-        // If your schema uses 'status' instead of 'isActive', change it here.
-        if (offer.status !== "ACTIVE" || offer.stockQuantity < item.quantity) {
+        if (offer.stockQuantity < item.quantity) {
           throw new Error(`Insufficient stock for "${offer.variant.product.title}". Only ${offer.stockQuantity} left.`);
         }
       }
@@ -123,16 +142,14 @@ export async function POST(req: Request) {
           },
           items: {
             create: validItems.map((item) => {
-              // ✅ FIX: Assign to a constant for cleaner code
               const offer = item.offer!;
-              
               return {
                 variant: { connect: { id: offer.variantId } },
                 title: offer.variant.product.title,
                 price: parseFloat(offer.price.toString()),
                 quantity: item.quantity,
                 sellerId: offer.sellerId,
-                offer: { connect: { id: offer.id } }, // ✅ Link to Offer
+                offer: { connect: { id: offer.id } },
                 status: "PENDING",
               };
             }),
@@ -140,24 +157,15 @@ export async function POST(req: Request) {
         },
       });
 
-      // C. Deduct Stock (OFFER ONLY)
+      // C. Deduct Stock
       for (const item of validItems) {
-        const offer = item.offer!;
         await tx.sellerOffer.update({
-          where: { id: offer.id },
+          where: { id: item.offer!.id },
           data: { stockQuantity: { decrement: item.quantity } },
         });
       }
 
-      // D. Increment Discount Usage
-      if (validated.discountId) {
-        await tx.discountCode.update({
-          where: { id: validated.discountId },
-          data: { usedCount: { increment: 1 } },
-        });
-      }
-      
-      // E. Clear purchased items from cart
+      // D. Clear Cart
       await tx.cartItem.deleteMany({
         where: { id: { in: validated.cartItemIds } },
       });
@@ -165,7 +173,7 @@ export async function POST(req: Request) {
       return newOrder;
     });
 
-    // 5. Initialize Paystack
+    // 5. Paystack
     const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: {
