@@ -55,14 +55,25 @@ export async function GET(request: Request) {
       }),
     ]);
 
-    // ✅ DEBUG: Log raw data to see if Prisma is finding offers
-    if (products.length > 0) {
-      console.log("🔍 RAW PRODUCT DATA:", {
-        title: products[0].title,
-        variantsCount: products[0].variants.length,
-        firstVariantOffers: products[0].variants[0]?.sellerOffers
-      });
-    }
+    // DEBUG: Inspect the actual product → variant → seller offer relationship.
+if (products.length > 0) {
+  for (const product of products.slice(0, 3)) {
+    console.log("🔍 PRODUCT OFFER DEBUG:", {
+      productId: product.id,
+      title: product.title,
+      variants: product.variants.map((variant) => ({
+        variantId: variant.id,
+        offers: variant.sellerOffers.map((offer) => ({
+          offerId: offer.id,
+          price: offer.price.toString(),
+          stockQuantity: offer.stockQuantity,
+          status: offer.status,
+          sellerId: offer.seller?.id,
+        })),
+      })),
+    });
+  }
+}
 
     const formattedProducts = products.map((product) => {
       let bestOffer: any = null;
@@ -99,7 +110,18 @@ export async function GET(request: Request) {
         inStock: !!bestOffer,
       };
     });
-
+     console.log(
+  "📦 FORMATTED SEARCH PRODUCTS:",
+  formattedProducts.slice(0, 5).map((product) => ({
+    id: product.id,
+    title: product.title,
+    bestOfferId: product.bestOfferId,
+    bestVariantId: product.bestVariantId,
+    price: product.price,
+    stockQuantity: product.stockQuantity,
+    inStock: product.inStock,
+  }))
+);
     return NextResponse.json({ 
       products: formattedProducts, 
       total,

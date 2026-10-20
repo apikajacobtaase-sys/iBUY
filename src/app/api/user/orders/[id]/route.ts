@@ -70,7 +70,7 @@ const formattedItems = order.items.map((item) => ({
   sku: item.variant?.sku || "N/A",
   sellerId: item.sellerId,
   // ✅ FIX: Use optional chaining through offer
-  sellerName: item.offer?.seller?.businessName || "Unknown Seller",
+  sellerName: item.offer?.seller?.businessName || "Seller information unavailable",
   offerId: item.offerId,
 }));
 

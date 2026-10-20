@@ -216,20 +216,18 @@ export default function ProductDetailsClient({ product }: { product: Product }) 
                                       id: Date.now().toString(),
                                     });
                                   }
-                                  
-                                  addItem({
-                                    productId: product.id,
-                                    variantId: selectedVariant.id,
-
-                                    title: product.title,
-                                    offerId: selectedVariant.offerId, // 👈 ADD THIS
-                                    price: offer.price,
-                                    imageUrl: product.images[0] || null,
-                                    stockQuantity: offer.stockQuantity,
-                                    sellerId: offer.sellerId,
-                                    sellerName: offer.sellerName,
-                                    quantity: 1,
-                                  });
+                                   addItem({
+  productId: product.id,
+  variantId: selectedVariant.id,
+  offerId: offer.offerId, // FIX: Use the selected seller's actual offer ID
+  title: product.title,
+  price: offer.price,
+  imageUrl: product.images[0] || null,
+  stockQuantity: offer.stockQuantity,
+  sellerId: offer.sellerId,
+  sellerName: offer.sellerName,
+  quantity: 1,
+});
                                 }
                               }}
                               disabled={!isOfferInStock}

@@ -16,22 +16,30 @@ export default async function MyOrdersPage() {
 
   console.log("🔍 MY ORDERS DEBUG: Fetching orders for userId:", session.user.id);
 
-  // Fetch ALL orders for this specific user, regardless of status
-  const orders = await db.order.findMany({
-    where: { 
-      userId: session.user.id 
-    },
-    include: {
-      items: {
-        include: {
-          variant: {
-            include: {
-              product: {
-                select: {
-                  title: true,
-                  images: { where: { isPrimary: true }, take: 1 },
-                  // 👇 Fetch seller through the product relation
-                  seller: { select: { businessName: true } }, 
+   const orders = await db.order.findMany({
+  where: {
+    userId: session.user.id,
+  },
+  include: {
+    items: {
+      include: {
+        offer: {
+          include: {
+            seller: {
+              select: {
+                businessName: true,
+              },
+            },
+          },
+        },
+        variant: {
+          include: {
+            product: {
+              select: {
+                title: true,
+                images: {
+                  where: { isPrimary: true },
+                  take: 1,
                 },
               },
             },
@@ -39,9 +47,11 @@ export default async function MyOrdersPage() {
         },
       },
     },
-    orderBy: { createdAt: "desc" },
-  });
-
+  },
+  orderBy: {
+    createdAt: "desc",
+  },
+});
   console.log(`✅ MY ORDERS DEBUG: Found ${orders.length} orders for this user.`);
 
   const formatCurrency = (amount: number | string) => {
@@ -107,7 +117,7 @@ export default async function MyOrdersPage() {
                       <h3 className="text-sm font-medium text-gray-900 line-clamp-2">{item.title || item.variant?.product?.title || "Product"}</h3>
                       {/* 👇 Get seller name from variant.product.seller */}
                       <p className="text-xs text-gray-500 mt-1">
-                        Sold by: {item.variant?.product?.seller?.businessName || "Unknown Seller"}
+                       Sold by: {item.offer?.seller?.businessName || "Seller information unavailable"}
                       </p>
                       <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
                     </div>
