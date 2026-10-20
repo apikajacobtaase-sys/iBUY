@@ -189,21 +189,26 @@ export async function POST(req: Request) {
       }),
     });
 
-    const paystackData = await paystackResponse.json();
-    if (!paystackData.status) {
-      throw new Error(paystackData.message || "Paystack initialization failed");
-    }
+    
+const paystackData = await paystackResponse.json();
+if (!paystackData.status) {
+  throw new Error(paystackData.message || "Paystack initialization failed");
+}
 
-    await db.order.update({
-      where: { id: order.id },
-      data: { paymentReference: paystackData.data.reference },
-    });
+// ✅ FIX: Ensure we save the reference from Paystack's response
+const paystackRef = paystackData.data.reference;
 
-    return NextResponse.json({
-      success: true,
-      orderId: order.id,
-      authorizationUrl: paystackData.data.authorization_url,
-    });
+await db.order.update({
+  where: { id: order.id },
+  data: { paymentReference: paystackRef }, // Save it here
+});
+
+return NextResponse.json({
+  success: true,
+  orderId: order.id,
+  authorizationUrl: paystackData.data.authorization_url,
+  reference: paystackRef, // Send it back to frontend too
+});
 
   } catch (error: any) {
     console.error("🚨 Checkout error:", error);

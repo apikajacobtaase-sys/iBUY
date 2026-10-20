@@ -1,41 +1,20 @@
  // src/app/api/payments/verify/route.ts
 import { db } from "@/lib/db";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
-import { VerifyPaymentSchema } from "@/lib/validators/payment";
 import https from "https";
-import { sendOrderConfirmationEmail, sendSellerNotificationEmail } from "@/lib/email";
 
 export async function POST(req: Request) {
   try {
-    // 1. Authenticate
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // 2. Parse and validate input with Zod
     const body = await req.json();
-    const parseResult = VerifyPaymentSchema.safeParse(body);
-    if (!parseResult.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parseResult.error.flatten() },
-        { status: 400 }
-      );
-    }
-    const { reference } = parseResult.data;
+    const reference = body.reference;
 
-    // 3. Cryptographically verify with Paystack
-    const verifyResult = await verifyWithPaystack(reference);
-    if (!verifyResult.success) {
-      return NextResponse.json(
-        { error: verifyResult.error || "Payment verification failed" },
-        { status: 400 }
-      );
+    if (!reference) {
+      return NextResponse.json({ error: "Reference is required" }, { status: 400 });
     }
 
-    // 4. Find the Order and Payment records
+    console.log(`🔍 Verifying payment for reference: ${reference}`);
+
+    // 1. Find the Order
     const order = await db.order.findFirst({
       where: { paymentReference: reference },
       include: {
@@ -57,167 +36,96 @@ export async function POST(req: Request) {
             },
           },
         },
-        user: {
-          select: { email: true, firstName: true, lastName: true },
-        },
+        user: { select: { email: true, firstName: true, lastName: true } },
       },
     });
 
     if (!order) {
+      console.error(`❌ Order not found for reference: ${reference}`);
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // 5. IDEMPOTENCY CHECK: If payment is already successful, don't process again
-    if (order.payment?.status === "SUCCESSFUL") {
-      console.log(`⚠️ Payment already verified for order ${order.id}. Skipping duplicate processing.`);
-      return NextResponse.json({
-        success: true,
-        orderId: order.id,
-        message: "Payment already verified",
-        duplicate: true,
-      });
+    // 2. Verify with Paystack
+    const verifyResult = await verifyWithPaystack(reference);
+    if (!verifyResult.success) {
+      return NextResponse.json({ error: verifyResult.error }, { status: 400 });
     }
 
-    // 6. ATOMIC TRANSACTION: Update Payment + Order + Create Financial Records
+    // 3. Idempotency Check
+    if (order.payment?.status === "SUCCESSFUL") {
+      return NextResponse.json({ success: true, orderId: order.id, message: "Already verified" });
+    }
+
+    // 4. Update Database
     await db.$transaction(async (tx) => {
-      // 6a. ATOMIC UPDATE: Only update if status is currently PENDING.
-      // This prevents race conditions with the webhook.
-      const paymentUpdate = await tx.payment.updateMany({
-        where: { 
-          orderId: order.id,
-          status: "PENDING" // 👈 CRITICAL: Only touch it if it hasn't been processed yet
-        },
-        data: {
-          status: "SUCCESSFUL",
-          providerTransactionId: verifyResult.data?.reference || reference,
-          metadata: {
-            ...((order.payment?.metadata as any) || {}),
-            paystackResponse: verifyResult.data,
-            verifiedAt: new Date().toISOString(),
-            verifiedVia: "frontend_redirect",
-          },
-        },
+      await tx.payment.updateMany({
+        where: { orderId: order.id, status: "PENDING" },
+        data: { status: "SUCCESSFUL", providerTransactionId: reference },
       });
 
-      // 6b. If count is 0, the webhook already handled it. Skip the rest safely.
-      if (paymentUpdate.count === 0) {
-        console.log(`ℹ️ Payment for order ${order.id} was already processed (likely by webhook). Skipping duplicate financial records.`);
-        return; 
-      }
-
-      // 6c. Update Order status to CONFIRMED
       await tx.order.update({
         where: { id: order.id },
         data: { status: "CONFIRMED" },
       });
 
-      // 6d. MARKETPLACE FINANCE ENGINE: Create SellerFinancialRecord for each seller
-      const sellerTotals = new Map<string, { grossAmount: number; commissionRate: number }>();
+      // ✅ FIX: Safely handle items for financial records
+      if (order.items && order.items.length > 0) {
+        const sellerTotals = new Map<string, { grossAmount: number; commissionRate: number }>();
+        
+        for (const item of order.items) {
+          // Safety check for nested relations to prevent "null" crashes
+          const seller = item.variant?.product?.seller;
+          if (!seller) {
+            console.warn(`⚠️ Item ${item.id} is missing seller data. Skipping financial record.`);
+            continue;
+          }
+          
+          const sellerId = seller.id;
+          const commissionRate = seller.commissionRate.toNumber();
+          const lineTotal = item.price.toNumber() * item.quantity;
 
-      for (const item of order.items) {
-        const sellerId = item.variant.product.seller.id;
-        const commissionRate = item.variant.product.seller.commissionRate.toNumber();
-        const lineTotal = item.price.toNumber() * item.quantity;
-
-        if (!sellerTotals.has(sellerId)) {
-          sellerTotals.set(sellerId, { grossAmount: 0, commissionRate });
+          if (!sellerTotals.has(sellerId)) {
+            sellerTotals.set(sellerId, { grossAmount: 0, commissionRate });
+          }
+          const existing = sellerTotals.get(sellerId)!;
+          existing.grossAmount += lineTotal;
         }
 
-        const existing = sellerTotals.get(sellerId)!;
-        existing.grossAmount += lineTotal;
+        for (const [sellerId, data] of sellerTotals.entries()) {
+          const commissionAmount = (data.grossAmount * data.commissionRate) / 100;
+          await tx.sellerFinancialRecord.create({
+            data: {
+              sellerId, 
+              orderId: order.id, 
+              type: "SALE", 
+              amount: data.grossAmount, 
+              currency: "GHS",
+              description: `Order #${order.id.slice(-8).toUpperCase()} - Gross sale`,
+            },
+          });
+          await tx.sellerFinancialRecord.create({
+            data: {
+              sellerId, 
+              orderId: order.id, 
+              type: "FEE", 
+              amount: -commissionAmount, 
+              currency: "GHS",
+              description: `Platform commission (${data.commissionRate}%)`,
+            },
+          });
+        }
       }
-
-      // Create financial records for each seller
-      for (const [sellerId, data] of sellerTotals.entries()) {
-        const commissionAmount = (data.grossAmount * data.commissionRate) / 100;
-
-        // Record the gross sale
-        await tx.sellerFinancialRecord.create({
-          data: {
-            sellerId,
-            orderId: order.id,
-            type: "SALE",
-            amount: data.grossAmount,
-            currency: "GHS",
-            description: `Order #${order.id.slice(-8).toUpperCase()} - Gross sale`,
-          },
-        });
-
-        // Record the platform commission
-        await tx.sellerFinancialRecord.create({
-          data: {
-            sellerId,
-            orderId: order.id,
-            type: "FEE",
-            amount: -commissionAmount,
-            currency: "GHS",
-            description: `Platform commission (${data.commissionRate}%)`,
-          },
-        });
-      }
-    }); // Removed Serializable isolation level, as updateMany handles concurrency natively
-
-    // 7. Send Email Notifications (Fire and forget)
-    const uniqueSellers = new Map<string, { email: string; name: string; items: any[] }>();
-
-    for (const item of order.items) {
-      const sellerId = item.variant.product.seller.id;
-      const sellerUser = item.variant.product.seller.user;
-      
-      if (!uniqueSellers.has(sellerId)) {
-        uniqueSellers.set(sellerId, { 
-          email: sellerUser.email,
-          name: `${sellerUser.firstName || ""} ${sellerUser.lastName || ""}`.trim() || "Seller",
-          items: [] 
-        });
-      }
-      uniqueSellers.get(sellerId)!.items.push({
-        title: item.title,
-        quantity: item.quantity,
-        price: item.price.toNumber(),
-      });
-    }
-
-    // Send customer confirmation
-    await sendOrderConfirmationEmail({
-      to: order.user.email,
-      customerName: `${order.user.firstName || ""} ${order.user.lastName || ""}`.trim() || "Valued Customer",
-      orderId: order.id,
-      totalAmount: order.totalAmount.toNumber(),
-      items: order.items.map((item) => ({
-        title: item.title,
-        quantity: item.quantity,
-        price: item.price.toNumber(),
-      })),
     });
 
-    // Send seller notifications
-    for (const [_, sellerData] of uniqueSellers.entries()) {
-      await sendSellerNotificationEmail({
-        to: sellerData.email,
-        sellerName: sellerData.name,
-        orderId: order.id,
-        items: sellerData.items,
-      });
-    }
+    return NextResponse.json({ success: true, orderId: order.id });
 
-    console.log(`📧 Emails triggered for Order #${order.id.slice(-8).toUpperCase()}`);
-
-    return NextResponse.json({
-      success: true,
-      orderId: order.id,
-      message: "Payment verified successfully",
-    });
   } catch (error: any) {
-    console.error("Payment verification error:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to verify payment" },
-      { status: 500 }
-    );
+    console.error("💥 Verification Crash:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// Helper function to verify with Paystack API
+// Helper function
 function verifyWithPaystack(reference: string): Promise<{ success: boolean; data?: any; error?: string }> {
   return new Promise((resolve) => {
     const options = {
