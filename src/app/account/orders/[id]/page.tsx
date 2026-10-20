@@ -30,8 +30,8 @@ interface OrderItem {
   sku: string;
   sellerId: string | null;
   sellerName: string;
+  offerId?: string | null; // ✅ Ensure this is present for Reorder
 }
-
 interface Order {
   id: string;
   status: string;
@@ -97,29 +97,35 @@ export default function OrderDetailPage() {
     }
   };
 
-  // 👈 FIX 2: Robust Reorder Logic matching cartStore interface
-  const handleReorder = async () => {
-    if (!order) return;
-    
-    const { addItem } = useCartStore.getState();
-    
-    for (const item of order.items) {
-      await addItem({
-        productId: item.productId || "unknown",
-        variantId: item.variantId || "unknown",
-        title: item.title,
-        price: item.price,
-        quantity: item.quantity,
-        imageUrl: item.imageUrl,
-        stockQuantity: 999, // Fallback for reorder
-        sellerId: item.sellerId || "unknown",
-        sellerName: item.sellerName,
-      });
-    }
+  // Inside OrderDetailPage component in src/app/account/orders/[id]/page.tsx
 
-    alert(`✅ Added ${order.items.length} item(s) to your cart!`);
-    router.push("/cart");
-  };
+const handleReorder = async () => {
+  if (!order) return;
+  
+  const { addItem } = useCartStore.getState();
+  
+  for (const item of order.items) {
+    // ✅ FIX: We need the offerId for reorder. 
+    // If your API doesn't send it, you might need to fetch it or skip items without it.
+    // For now, we'll use a placeholder or check if it exists in the item object.
+    
+    await addItem({
+      productId: item.productId || "unknown",
+      variantId: item.variantId || "unknown",
+      offerId: item.offerId || null, // ⚠️ IMPORTANT: Ensure your API sends 'offerId' in the item
+      title: item.title,
+      price: item.price,
+      quantity: item.quantity,
+      imageUrl: item.imageUrl,
+      stockQuantity: 999,
+      sellerId: item.sellerId || "unknown",
+      sellerName: item.sellerName,
+    });
+  }
+
+  alert(`✅ Added ${order.items.length} item(s) to your cart!`);
+  router.push("/cart");
+};
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
