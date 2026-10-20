@@ -81,33 +81,44 @@ export default function HomePage() {
     }
   };
 
-  const loadProducts = async (pageNum: number, reset: boolean) => {
-    try {
-      const url = `/api/search?q=&page=${pageNum}&limit=12`;
-      const res = await fetch(url, { cache: "no-store" });
+ // In src/app/page.tsx
+const loadProducts = async (pageNum: number, reset: boolean) => {
+  try {
+    // ✅ Add timestamp to prevent caching of old data
+    const url = `/api/search?q=&page=${pageNum}&limit=12&t=${Date.now()}`;
+    const res = await fetch(url, { cache: "no-store" });
 
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
 
-      const data = await res.json();
-      const newProducts = data.products || [];
-      
-      if (reset) {
-        setProducts(newProducts);
-      } else {
-        setProducts((prev) => {
-          const existingIds = new Set(prev.map((p) => p.id));
-          const uniqueNew = newProducts.filter((p: Product) => !existingIds.has(p.id));
-          return [...prev, ...uniqueNew];
-        });
-      }
-      
-      setHasMore(data.hasMore || false);
-      setPage(pageNum);
-    } catch (error) {
-      console.error("💥 Failed to load products:", error);
-      setHasMore(false);
+    const data = await res.json();
+    
+    // ✅ DEBUG: Check if the API is actually sending the ID
+    if (data.products && data.products.length > 0) {
+      const firstProduct = data.products[0];
+      console.log("📦 API Response Sample:", {
+        title: firstProduct.title,
+        slug: firstProduct.slug,
+        bestOfferId: firstProduct.bestOfferId // This MUST be 'cmvg31uru000bjj0jopdo6pqu'
+      });
     }
-  };
+    
+    if (reset) {
+      setProducts(data.products || []);
+    } else {
+      setProducts((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const uniqueNew = (data.products || []).filter((p: Product) => !existingIds.has(p.id));
+        return [...prev, ...uniqueNew];
+      });
+    }
+    
+    setHasMore(data.hasMore || false);
+    setPage(pageNum);
+  } catch (error) {
+    console.error("💥 Failed to load products:", error);
+    setHasMore(false);
+  }
+};
 
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
