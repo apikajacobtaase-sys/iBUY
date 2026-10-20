@@ -5,7 +5,7 @@ import React, { useEffect, useState, useRef, useCallback, FormEvent } from "reac
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Search, Heart, ShoppingCart, ArrowUp } from "lucide-react";
+import { Search, Heart, ShoppingCart } from "lucide-react";
 import BottomNav from "@/components/BottomNav";
 import { useCartStore } from "@/store/cartStore";
 import { triggerFlyToCart, getElementRect } from "@/lib/cartAnimation";
@@ -36,7 +36,6 @@ export default function HomePage() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastProductRef = useCallback(
@@ -57,9 +56,6 @@ export default function HomePage() {
 
   useEffect(() => {
     loadInitialProducts();
-    const handleScroll = () => setShowScrollTop(window.scrollY > 500);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   const loadInitialProducts = async () => {
@@ -241,8 +237,20 @@ export default function HomePage() {
                       <button
                         onClick={(e) => {
                           e.preventDefault();
-                          // ✅ FIX: Properly wrapped addItem logic
-                          if (product.inStock && product.bestOfferId) {
+                          
+                          // ✅ DEBUG: Check what the frontend actually sees
+                          console.log("🛒 DEBUG - Product Data:", {
+                            title: product.title,
+                            bestOfferId: product.bestOfferId,
+                            inStock: product.inStock
+                          });
+
+                          if (!product.bestOfferId) {
+                            alert("Error: This product has no active seller offer.");
+                            return;
+                          }
+
+                          if (product.inStock) {
                             const imgElement = e.currentTarget.closest('.product-card')?.querySelector('img');
                             const rect = getElementRect(imgElement as HTMLElement);
                             triggerFlyToCart({
@@ -251,19 +259,19 @@ export default function HomePage() {
                               startY: rect.y,
                               id: Date.now().toString(),
                             });
-                           // Inside the onClick handler
-addItem({
-  productId: product.id,
-  variantId: product.bestVariantId || product.id,
-  offerId: product.bestOfferId, // ✅ MUST BE PRESENT
-  title: product.title,
-  price: product.price,
-  imageUrl: product.imageUrl,
-  stockQuantity: product.stockQuantity,
-  sellerId: product.sellerId,
-  sellerName: product.sellerName,
-  quantity: 1,
-});
+                            
+                            addItem({
+                              productId: product.id,
+                              variantId: product.bestVariantId || product.id,
+                              offerId: product.bestOfferId, // ✅ MUST BE PRESENT
+                              title: product.title,
+                              price: product.price,
+                              imageUrl: product.imageUrl,
+                              stockQuantity: product.stockQuantity,
+                              sellerId: product.sellerId || "unknown",
+                              sellerName: product.sellerName || "iBUY Marketplace",
+                              quantity: 1,
+                            });
                           }
                         }}
                         disabled={!product.inStock}
